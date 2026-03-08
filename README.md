@@ -1,44 +1,59 @@
-# JLC Custom Nodes for ComfyUI
+# JLC ComfyUI Nodes
 
 ![ComfyUI](https://img.shields.io/badge/ComfyUI-Custom%20Nodes-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-active-brightgreen)
 
-A curated collection of custom nodes for **ComfyUI**, developed by  
-**J. L. Cordova**.
+A curated collection of **workflow-oriented custom nodes for ComfyUI**, developed by  
+**J. L. Córdova**.
 
 These nodes focus on improving practical workflows for modern image
 generation pipelines, particularly:
 
-• Flux-based workflows  
-• LoRA experimentation  
-• Advanced inpainting and outpainting pipelines  
-• Structured ControlNet pipelines  
+- Flux workflows
+- LoRA experimentation
+- advanced inpainting / outpainting pipelines
+- structured ControlNet pipelines
 
-The goal of this repository is to provide **clean, well-documented,
-workflow-oriented nodes** that integrate naturally into professional
-ComfyUI pipelines.
-
----
-
-# Repository
-
+Repository  
 https://github.com/Damkohler/jlc-comfyui-nodes
 
 ---
 
-## Table of Contents
+## Example Workflow
+
+*(Workflow screenshots can be added later)*
+
+```text
+assets/example_workflow.png
+```
+
+When added, reference it like this:
+
+```markdown
+![Example Workflow](assets/example_workflow.png)
+```
+
+---
+
+# Table of Contents
 
 - [Installation](#installation)
 - [Nodes Included](#nodes-included)
+- [Node Descriptions](#node-descriptions)
 - [Design Philosophy](#design-philosophy)
+- [Compatibility](#compatibility)
 - [License](#license)
+- [Attribution](#attribution)
+- [Author](#author)
+- [Future Plans](#future-plans)
+- [Contributions](#contributions)
 
 ---
 
 # Installation
 
-Clone this repository into your **ComfyUI custom nodes directory**.
+Clone this repository into your **ComfyUI `custom_nodes` directory**.
 
 ```
 ComfyUI/
@@ -53,7 +68,8 @@ git clone https://github.com/Damkohler/jlc-comfyui-nodes.git
 
 Restart **ComfyUI** after installation.
 
-The nodes will appear under the **JLC** category in the node browser.
+The nodes will appear in the standard ComfyUI node menu under their
+appropriate workflow categories.
 
 ---
 
@@ -85,7 +101,7 @@ by placing them on a new canvas with a specified aspect ratio and size.
 - Optional manual mask merging
 - Deterministic padding behavior
 
-Designed to work well with inpainting models such as:
+Designed to work particularly well with inpainting models such as:
 
 ```
 flux1-fill-dev
@@ -124,8 +140,8 @@ within a generation pipeline.
 - improved workflow clarity
 - compatibility with Flux-based pipelines
 
-This node is adapted from the built-in **ComfyUI ControlNet logic**
-with workflow-oriented improvements.
+This node adapts the built-in **ComfyUI ControlNet application logic**
+for cleaner integration into custom workflows.
 
 ---
 
@@ -146,7 +162,7 @@ Empty slots or strengths of zero are automatically skipped.
 
 ### Inspiration
 
-Concept based on the **LoRA Loader Stack** design by:
+Concept inspired by the **LoRA Loader Stack** design by:
 
 https://github.com/rgthree
 
@@ -164,7 +180,7 @@ over how LoRA influence is distributed across model layers.
 - per-slot block weight vectors
 - sequential LoRA application
 
-This node is adapted from the implementation found in the
+This node is adapted from the implementation found in the  
 **ComfyUI Inspire Pack** project.
 
 Original project:
@@ -177,7 +193,7 @@ Released under the **MIT License**.
 
 # Design Philosophy
 
-The nodes in this repository follow a consistent set of principles.
+The nodes in this repository follow several guiding principles.
 
 ## Workflow clarity
 
@@ -187,7 +203,7 @@ abstraction layers.
 ## Deterministic behavior
 
 Operations such as padding, mask generation, and LoRA stacking are
-implemented to behave predictably.
+implemented to behave predictably and consistently.
 
 ## Uniform documentation
 
@@ -200,7 +216,7 @@ Each node includes a standardized header structure containing:
 
 ## Metadata manifests
 
-Each node includes a `MANIFEST` block with metadata such as:
+Each node includes a `MANIFEST` block containing metadata such as:
 
 - node name
 - version
@@ -235,8 +251,6 @@ Those sections retain their original attribution and licensing terms.
 Some node concepts and implementations were inspired by existing
 ComfyUI projects.
 
-Credits include:
-
 ### rgthree
 
 LoRA Loader Stack concept
@@ -253,7 +267,7 @@ https://github.com/ltdrdata/ComfyUI-Inspire-Pack
 
 # Author
 
-**J. L. Cordova**
+**J. L. Córdova**
 
 GitHub  
 https://github.com/Damkohler
