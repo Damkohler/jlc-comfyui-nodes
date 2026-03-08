@@ -1,0 +1,280 @@
+# JLC Custom Nodes for ComfyUI
+
+![ComfyUI](https://img.shields.io/badge/ComfyUI-Custom%20Nodes-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Status](https://img.shields.io/badge/status-active-brightgreen)
+
+A curated collection of custom nodes for **ComfyUI**, developed by  
+**J. L. Cordova**.
+
+These nodes focus on improving practical workflows for modern image
+generation pipelines, particularly:
+
+• Flux-based workflows  
+• LoRA experimentation  
+• Advanced inpainting and outpainting pipelines  
+• Structured ControlNet pipelines  
+
+The goal of this repository is to provide **clean, well-documented,
+workflow-oriented nodes** that integrate naturally into professional
+ComfyUI pipelines.
+
+---
+
+# Repository
+
+https://github.com/Damkohler/jlc-comfyui-nodes
+
+---
+
+## Table of Contents
+
+- [Installation](#installation)
+- [Nodes Included](#nodes-included)
+- [Design Philosophy](#design-philosophy)
+- [License](#license)
+
+---
+
+# Installation
+
+Clone this repository into your **ComfyUI custom nodes directory**.
+
+```
+ComfyUI/
+└── custom_nodes/
+```
+
+Then run:
+
+```
+git clone https://github.com/Damkohler/jlc-comfyui-nodes.git
+```
+
+Restart **ComfyUI** after installation.
+
+The nodes will appear under the **JLC** category in the node browser.
+
+---
+
+# Nodes Included
+
+| Node | Purpose |
+|-----|--------|
+| **JLC Padded Image** | Canvas preparation for inpainting and outpainting workflows |
+| **JLC Padded Latent** | Combined padded-image + latent + mask conditioning pipeline |
+| **JLC ControlNet Apply** | Simplified ControlNet application node |
+| **JLC 10 LoRA Loader Stack** | Sequential loader for up to 10 LoRAs |
+| **JLC LoRA Loader (Block Weight)** | Multi-slot LoRA loader with block weight control |
+
+---
+
+# Node Descriptions
+
+## JLC Padded Image
+
+A utility node that prepares images for **inpainting or outpainting**
+by placing them on a new canvas with a specified aspect ratio and size.
+
+### Features
+
+- Canvas resizing with aspect ratio control
+- Image placement using offset controls
+- High-quality **Lanczos resampling**
+- Automatic outpaint mask generation
+- Optional manual mask merging
+- Deterministic padding behavior
+
+Designed to work well with inpainting models such as:
+
+```
+flux1-fill-dev
+```
+
+---
+
+## JLC Padded Latent
+
+A higher-level workflow node that combines:
+
+- padded image preparation
+- mask generation
+- inpaint conditioning
+
+### Outputs
+
+- conditioned positive prompt
+- conditioned negative prompt
+- latent image
+- mask
+- image dimensions
+
+This node simplifies building **reusable inpainting pipelines**.
+
+---
+
+## JLC ControlNet Apply
+
+A streamlined node for applying **ControlNet conditioning**
+within a generation pipeline.
+
+### Design Goals
+
+- simplified parameter handling
+- improved workflow clarity
+- compatibility with Flux-based pipelines
+
+This node is adapted from the built-in **ComfyUI ControlNet logic**
+with workflow-oriented improvements.
+
+---
+
+## JLC 10 LoRA Loader Stack
+
+Applies up to **ten LoRA models sequentially** to a base model.
+
+### Features
+
+Each slot includes:
+
+- selectable LoRA file
+- independent strength control
+
+Slots operate independently and are applied **in order**.
+
+Empty slots or strengths of zero are automatically skipped.
+
+### Inspiration
+
+Concept based on the **LoRA Loader Stack** design by:
+
+https://github.com/rgthree
+
+---
+
+## JLC LoRA Loader (Block Weight)
+
+A LoRA loader with **block weight support**, allowing detailed control
+over how LoRA influence is distributed across model layers.
+
+### Features
+
+- multiple LoRA slots
+- independent model and CLIP strengths
+- per-slot block weight vectors
+- sequential LoRA application
+
+This node is adapted from the implementation found in the
+**ComfyUI Inspire Pack** project.
+
+Original project:
+
+https://github.com/ltdrdata/ComfyUI-Inspire-Pack
+
+Released under the **MIT License**.
+
+---
+
+# Design Philosophy
+
+The nodes in this repository follow a consistent set of principles.
+
+## Workflow clarity
+
+Nodes simplify complex workflows rather than introducing additional
+abstraction layers.
+
+## Deterministic behavior
+
+Operations such as padding, mask generation, and LoRA stacking are
+implemented to behave predictably.
+
+## Uniform documentation
+
+Each node includes a standardized header structure containing:
+
+- repository attribution
+- node purpose description
+- third-party attribution where applicable
+- license information
+
+## Metadata manifests
+
+Each node includes a `MANIFEST` block with metadata such as:
+
+- node name
+- version
+- author
+- description
+
+These manifests support future tooling and repository indexing.
+
+---
+
+# Compatibility
+
+Tested with:
+
+- **ComfyUI**
+- **Flux-based models**
+- **LoRA-enabled pipelines**
+
+---
+
+# License
+
+This repository is released under the **MIT License**.
+
+Some nodes include adapted logic from other open-source projects.
+Those sections retain their original attribution and licensing terms.
+
+---
+
+# Attribution
+
+Some node concepts and implementations were inspired by existing
+ComfyUI projects.
+
+Credits include:
+
+### rgthree
+
+LoRA Loader Stack concept
+
+https://github.com/rgthree
+
+### ComfyUI Inspire Pack
+
+LoRA Loader (Block Weight) implementation
+
+https://github.com/ltdrdata/ComfyUI-Inspire-Pack
+
+---
+
+# Author
+
+**J. L. Cordova**
+
+GitHub  
+https://github.com/Damkohler
+
+---
+
+# Future Plans
+
+The JLC node collection will continue expanding with nodes focused on:
+
+- advanced inpainting workflows
+- Flux pipeline utilities
+- LoRA experimentation tools
+- pipeline orchestration helpers
+
+---
+
+# Contributions
+
+Suggestions and improvements are welcome.
+
+Feel free to open issues or submit pull requests.
+
+---
