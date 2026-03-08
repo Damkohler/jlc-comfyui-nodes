@@ -1,0 +1,29 @@
+[project]
+name = "jlc-comfyui-nodes"
+version = "1.0.0"
+description = "Custom workflow-oriented nodes for ComfyUI"
+authors = [
+    { name = "J. L. Córdova", email = "jose.l.cordova@gmail.com" }
+]
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+
+keywords = [
+    "comfyui",
+    "stable-diffusion",
+    "flux",
+    "lora",
+    "controlnet"
+]
+
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Multimedia :: Graphics",
+]
+
+[project.urls]
+Homepage = "https://github.com/Damkohler/jlc-comfyui-nodes"
+Repository = "https://github.com/Damkohler/jlc-comfyui-nodes"
+Issues = "https://github.com/Damkohler/jlc-comfyui-nodes/issues"
