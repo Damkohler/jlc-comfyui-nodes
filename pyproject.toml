@@ -6,7 +6,7 @@ authors = [
     { name = "J. L. Córdova", email = "jose.l.cordova@gmail.com" }
 ]
 readme = "README.md"
-license = { text = "MIT" }
+license = { file = "LICENSE" }
 requires-python = ">=3.10"
 
 keywords = [
@@ -27,3 +27,8 @@ classifiers = [
 Homepage = "https://github.com/Damkohler/jlc-comfyui-nodes"
 Repository = "https://github.com/Damkohler/jlc-comfyui-nodes"
 Issues = "https://github.com/Damkohler/jlc-comfyui-nodes/issues"
+
+[tool.comfy]
+PublisherId = "damkohler"
+DisplayName = "JLC ComfyUI Nodes"
+Icon = "https://raw.githubusercontent.com/Damkohler/jlc-comfyui-nodes/main/assets/icons/jlc-comfyui-nodes_Logo-0512.png"

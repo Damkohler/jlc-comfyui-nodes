@@ -1,5 +1,6 @@
 # JLC ComfyUI Nodes
 
+![JLC Nodes](assets/icons/jlc-comfyui-nodes_Logo-0512.png)
 ![ComfyUI](https://img.shields.io/badge/ComfyUI-Custom%20Nodes-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-active-brightgreen)
@@ -22,17 +23,27 @@ https://github.com/Damkohler/jlc-comfyui-nodes
 
 ## Example Workflow
 
-*(Workflow screenshots can be added later)*
+- JLC Padded Image (Inpaint / Outpaint Canvas Builder)
+The following workflows feature use of the JLC Padded Image node used to pad images with arbitrary size and aspect ratio outpainting masks and blend with inpainting masks, enabling inpainting and outpainting in a single pass.
 
-```text
-assets/example_workflow.png
-```
+### Basic Inpainting / Outpainting Workflow
 
-When added, reference it like this:
+PNG with embedded workflow:  
+[Open PNG](assets/workflows/jlc_padded_image_Basic_Infill_Outfill.png)
 
-```markdown
-![Example Workflow](assets/example_workflow.png)
-```
+Workflow JSON:  
+[Download JSON](assets/workflows/jlc_padded_image_Basic_Infill_Outfill.json)
+
+
+### Preferred Inpainting / Outpainting Workflow
+
+PNG with embedded workflow:  
+[Open PNG](assets/workflows/jlc_padded_image_Best_Infill_Outfill.png)
+
+Workflow JSON:  
+[Download JSON](assets/workflows/jlc_padded_image_Best_Infill_Outfill.json)
+
+*(Other workflows will be added later)*
 
 ---
 
