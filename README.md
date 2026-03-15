@@ -1,6 +1,9 @@
+<p align="center">
+  <img src="assets/icons/jlc-comfyui-nodes_Logo-0512.png" width="120">
+</p>
+
 # JLC ComfyUI Nodes
 
-![JLC Nodes](assets/icons/jlc-comfyui-nodes_Logo-0064.png)
 ![ComfyUI](https://img.shields.io/badge/ComfyUI-Custom%20Nodes-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-active-brightgreen)
