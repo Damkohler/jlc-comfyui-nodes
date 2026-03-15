@@ -1,7 +1,7 @@
 [project]
 name = "jlc-comfyui-nodes"
 version = "1.0.0"
-description = "Custom workflow-oriented nodes for ComfyUI"
+description = "Custom workflow-oriented nodes for ComfyUI focused on Flux pipelines, LoRA experimentation, ControlNet utilities, and advanced inpainting/outpainting workflows."
 authors = [
     { name = "J. L. Córdova", email = "jose.l.cordova@gmail.com" }
 ]
@@ -14,7 +14,10 @@ keywords = [
     "stable-diffusion",
     "flux",
     "lora",
-    "controlnet"
+    "controlnet",
+    "inpainting",
+    "outpainting",
+    "workflow",
 ]
 
 classifiers = [
@@ -32,3 +35,5 @@ Issues = "https://github.com/Damkohler/jlc-comfyui-nodes/issues"
 PublisherId = "damkohler"
 DisplayName = "JLC ComfyUI Nodes"
 Icon = "https://raw.githubusercontent.com/Damkohler/jlc-comfyui-nodes/main/assets/icons/jlc-comfyui-nodes_Logo-0512.png"
+Category = "nodes"
+Homepage = "https://github.com/Damkohler/jlc-comfyui-nodes"

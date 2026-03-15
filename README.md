@@ -1,14 +1,15 @@
+# JLC ComfyUI Nodes
+
 <p align="center">
   <img src="assets/icons/jlc-comfyui-nodes_Logo-0512.png" width="120">
 </p>
 
-# JLC ComfyUI Nodes
-
+[![ComfyUI Registry](https://img.shields.io/badge/ComfyUI-Registry-blue)](https://registry.comfy.org/packages/jlc-comfyui-nodes)
 ![ComfyUI](https://img.shields.io/badge/ComfyUI-Custom%20Nodes-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-active-brightgreen)
 
-A curated collection of **workflow-oriented custom nodes for ComfyUI**, developed by  
+Custom workflow-oriented nodes for ComfyUI focused on Flux pipelines, LoRA experimentation, ControlNet utilities, and advanced inpainting/outpainting workflows. Developed by
 **J. L. Córdova**.
 
 These nodes focus on improving practical workflows for modern image
@@ -24,33 +25,38 @@ https://github.com/Damkohler/jlc-comfyui-nodes
 
 ---
 
-## Example Workflow
-
-- JLC Padded Image (Inpaint / Outpaint Canvas Builder)
-The following workflows feature use of the JLC Padded Image node used to pad images with arbitrary size and aspect ratio outpainting masks and blend with inpainting masks, enabling inpainting and outpainting in a single pass.
+## Example Workflows
+PNG workflows contain the embedded ComfyUI graph and can be dragged directly into the ComfyUI canvas.
 
 ### Basic Inpainting / Outpainting Workflow
 
-PNG with embedded workflow:  
-[Open PNG](assets/workflows/jlc_padded_image_Basic_Infill_Outfill.png)
+<p align="center">
+  <img src="assets/workflows/jlc_padded_image_Basic_Infill_Outfill.png" width="900">
+</p>
 
-Workflow JSON:  
-[Download JSON](assets/workflows/jlc_padded_image_Basic_Infill_Outfill.json)
+<p align="center">
+  <a href="assets/workflows/jlc_padded_image_Basic_Infill_Outfill.png">Download PNG</a> •
+  <a href="assets/workflows/jlc_padded_image_Basic_Infill_Outfill.json">Download JSON</a>
+</p>
 
+---
 
 ### Preferred Inpainting / Outpainting Workflow
 
-PNG with embedded workflow:  
-[Open PNG](assets/workflows/jlc_padded_image_Best_Infill_Outfill.png)
+<p align="center">
+  <img src="assets/workflows/jlc_padded_image_Best_Infill_Outfill.png" width="900">
+</p>
 
-Workflow JSON:  
-[Download JSON](assets/workflows/jlc_padded_image_Best_Infill_Outfill.json)
+<p align="center">
+  <a href="assets/workflows/jlc_padded_image_Best_Infill_Outfill.png">Download PNG</a> •
+  <a href="assets/workflows/jlc_padded_image_Best_Infill_Outfill.json">Download JSON</a>
+</p>
 
 *(Other workflows will be added later)*
 
 ---
 
-# Table of Contents
+## Table of Contents
 
 - [Installation](#installation)
 - [Nodes Included](#nodes-included)
@@ -65,8 +71,9 @@ Workflow JSON:
 
 ---
 
-# Installation
+## Installation
 
+### Using git:
 Clone this repository into your **ComfyUI `custom_nodes` directory**.
 
 ```
@@ -84,6 +91,13 @@ Restart **ComfyUI** after installation.
 
 The nodes will appear in the standard ComfyUI node menu under their
 appropriate workflow categories.
+
+### Install via ComfyUI Manager
+
+1. Open **ComfyUI**
+2. Open **Manager**
+3. Search for **JLC ComfyUI Nodes**
+4. Click **Install**
 
 ---
 
@@ -128,7 +142,7 @@ flux1-fill-dev
 A higher-level workflow node that combines:
 
 - padded image preparation
-- mask generation
+- outpaint mask generation and merge with inpaint masks
 - inpaint conditioning
 
 ### Outputs
@@ -292,7 +306,7 @@ https://github.com/Damkohler
 
 The JLC node collection will continue expanding with nodes focused on:
 
-- advanced inpainting workflows
+- advanced inpainting/outpainting workflows
 - Flux pipeline utilities
 - LoRA experimentation tools
 - pipeline orchestration helpers
