@@ -5,24 +5,37 @@
  *   - JLC_LoadAndResizeImage
  *   - JLC_ResizeImage
  *
- * Python predeclares every mode-specific numeric widget so workflows remain
- * stable in API JSON. This file hides irrelevant controls and exposes only the
- * widget used by the selected resize mode.
+ * Both nodes predeclare every mode-specific numeric widget. This extension
+ * exposes only the control used by the selected resize mode.
+ *
+ * Layout policy:
+ *   - JLC_ResizeImage is compacted to the minimum visible-widget height.
+ *   - JLC_LoadAndResizeImage preserves the user's current node height because
+ *     that height also controls the embedded image-preview area.
+ *
+ * Important:
+ *   - Keep each widget's real type intact. In current ComfyUI frontends,
+ *     widget-backed input sockets coexist with their widgets.
+ *   - Never replace node.widgets with a filtered list during computeSize().
+ *     Current frontends expose node.widgets through a reactive setter, so
+ *     filtering that array can permanently remove the hidden widgets.
  */
 
 const { app } = window.comfyAPI.app;
 
+const LOAD_NODE_NAME = "JLC_LoadAndResizeImage";
+const RESIZE_NODE_NAME = "JLC_ResizeImage";
+
 const NODE_NAMES = new Set([
-    "JLC_LoadAndResizeImage",
-    "JLC_ResizeImage",
-    // Compatibility with the earlier mapping-key suggestion.
-    "JLC Resize Image",
+    LOAD_NODE_NAME,
+    RESIZE_NODE_NAME,
 ]);
+
 const MODE_WIDGET = "resize_by";
-const LAYOUT_KEY = "__jlc_load_resize_image_widget_layout";
-const INSTALL_FLAG = "__jlc_load_resize_image_visibility_installed";
-const CONFIGURED_KEY = "__jlc_load_resize_image_configured";
-const SAVED_SIZE_KEY = "__jlc_load_resize_image_saved_size";
+const LAYOUT_KEY = "__jlc_resize_widget_layout";
+const INSTALL_FLAG = "__jlc_resize_visibility_installed";
+const SOCKET_VISIBILITY_FLAG = "__jlc_resize_socket_visibility_installed";
+const ACTIVE_WIDGET_KEY = "__jlc_resize_active_widget";
 
 const MODE_WIDGET_MAP = {
     "scale by multiplier": "multiplier",
@@ -35,225 +48,196 @@ const MODE_WIDGET_MAP = {
 
 const MODE_SPECIFIC_WIDGETS = new Set(Object.values(MODE_WIDGET_MAP));
 
-function getWidgetInput(node, widget) {
-    if (!node || !widget?.name || !Array.isArray(node.inputs)) {
-        return null;
+/*
+ * Current ComfyUI hit-testing checks every input socket in array order, even
+ * when the widget associated with that socket is hidden. Because hidden
+ * widget-backed sockets collapse onto the visible widget row, an earlier
+ * hidden socket can intercept the click. In this node, the first such socket
+ * is multiplier (FLOAT), which made the visible longer_size row behave like a
+ * FLOAT socket and reject INT links.
+ *
+ * Keep all backend inputs intact, but move inactive mode-specific sockets out
+ * of the hit-test/render area through getInputPos().
+ */
+function installSocketVisibility(node) {
+    if (
+        node[SOCKET_VISIBILITY_FLAG] ||
+        typeof node.getInputPos !== "function"
+    ) {
+        return;
     }
 
-    return (
-        node.inputs.find((input) =>
-            input?.widget === widget ||
-            input?.widget?.name === widget.name ||
-            input?.name === widget.name
-        ) ?? null
-    );
-}
+    node[SOCKET_VISIBILITY_FLAG] = true;
+    const originalGetInputPos = node.getInputPos;
 
-function inputHasLink(input) {
-    if (!input) return false;
+    node.getInputPos = function (slot) {
+        const input = this.inputs?.[slot];
+        const widgetName = input?.widget?.name;
 
-    if (input.link !== null && input.link !== undefined) {
-        return true;
-    }
+        if (
+            MODE_SPECIFIC_WIDGETS.has(widgetName) &&
+            widgetName !== this[ACTIVE_WIDGET_KEY]
+        ) {
+            const out = arguments[1] ?? [0, 0];
 
-    if (Array.isArray(input.links) && input.links.length > 0) {
-        return true;
-    }
+            out[0] = (this.pos?.[0] ?? 0) - 1000000;
+            out[1] = (this.pos?.[1] ?? 0) - 1000000;
+            return out;
+        }
 
-    return Boolean(input.isConnected);
-}
-
-function isExternallyManagedWidget(node, widget) {
-    /*
-     * Modern ComfyUI may expose a widget-backed input-slot record even before
-     * a link exists. Therefore, input presence alone must not suppress our
-     * dynamic visibility behavior.
-     *
-     * Leave only genuinely connected widgets—or legacy converted widgets—
-     * untouched so ComfyUI can manage their socket/conversion state safely.
-     */
-    const input = getWidgetInput(node, widget);
-
-    return (
-        inputHasLink(input) ||
-        widget?.type === "converted-widget"
-    );
+        return originalGetInputPos.apply(this, arguments);
+    };
 }
 
 function rememberWidgetLayout(widget) {
     if (!widget[LAYOUT_KEY]) {
         widget[LAYOUT_KEY] = {
-            type: widget.type,
-            computeSize: widget.computeSize,
             hidden: widget.hidden,
+            optionsHidden: widget.options?.hidden,
         };
     }
 }
 
-function hideWidget(node, widget) {
-    if (isExternallyManagedWidget(node, widget)) {
-        return;
-    }
-
+function hideWidget(widget) {
     rememberWidgetLayout(widget);
 
-    /*
-     * Preserve the widget's INT/FLOAT type. Auto widget-to-input conversion
-     * relies on that frontend type metadata, so changing it to "hidden" can
-     * prevent a compatible primitive node from attaching.
-     */
-    widget.computeSize = () => [0, -4];
+    // Preserve widget.type (for example, "number"). The associated socket
+    // remains a valid INT/FLOAT widget-backed input while the control is hidden.
     widget.hidden = true;
+    widget.options ??= {};
+    widget.options.hidden = true;
 }
 
-function showWidget(node, widget) {
-    if (isExternallyManagedWidget(node, widget)) {
+function showWidget(widget) {
+    rememberWidgetLayout(widget);
+    const layout = widget[LAYOUT_KEY];
+
+    widget.hidden = layout.hidden ?? false;
+    widget.options ??= {};
+
+    if (layout.optionsHidden === undefined) {
+        delete widget.options.hidden;
+    } else {
+        widget.options.hidden = layout.optionsHidden;
+    }
+}
+
+function resizeNodeAfterVisibility(node) {
+    if (typeof node.computeSize !== "function" || !node.size) {
         return;
     }
 
-    const layout = widget[LAYOUT_KEY];
-    if (layout) {
-        widget.computeSize = layout.computeSize;
-        widget.hidden = layout.hidden ?? false;
+    // Current ComfyUI computeSize() already ignores widget.hidden controls.
+    const computed = node.computeSize();
+    if (!computed) {
+        return;
+    }
+
+    const currentWidth = node.size[0] ?? computed[0] ?? 260;
+    const minimumWidth = computed[0] ?? currentWidth;
+    const targetWidth = Math.max(currentWidth, minimumWidth);
+
+    let targetHeight;
+
+    if (node.comfyClass === RESIZE_NODE_NAME) {
+        targetHeight = computed[1];
     } else {
-        widget.hidden = false;
-    }
-}
-
-function normalizeNodeSize(size) {
-    if (!size || typeof size.length !== "number" || size.length < 2) {
-        return null;
+        const currentHeight = node.size[1] ?? computed[1];
+        targetHeight = Math.max(currentHeight, computed[1]);
     }
 
-    const width = Number(size[0]);
-    const height = Number(size[1]);
-
-    if (!Number.isFinite(width) || !Number.isFinite(height)) {
-        return null;
-    }
-
-    return [width, height];
-}
-
-function setNodeSize(node, width, height) {
-    if (node.setSize) {
-        node.setSize([width, height]);
+    if (typeof node.setSize === "function") {
+        node.setSize([targetWidth, targetHeight]);
     } else {
-        node.size[0] = width;
-        node.size[1] = height;
+        node.size[0] = targetWidth;
+        node.size[1] = targetHeight;
         node.onResize?.(node.size);
     }
 }
 
-function resizeNodeToVisibleWidgets(node, { compactNewNode = false } = {}) {
-    if (!node.computeSize || !node.size) return;
-
-    const computed = normalizeNodeSize(node.computeSize());
-    const current = normalizeNodeSize(node.size);
-    if (!computed || !current) return;
-
-    /*
-     * A restored workflow node must honor the size serialized in the workflow.
-     * A manually enlarged node must also never be reduced merely because the
-     * visibility script recalculated its minimum widget height.
-     *
-     * Only a genuinely new node—which has not received onConfigure data—is
-     * compacted to the minimum size after irrelevant widgets are hidden.
-     */
-    if (compactNewNode && !node[CONFIGURED_KEY]) {
-        setNodeSize(
-            node,
-            Math.max(current[0], computed[0]),
-            computed[1],
-        );
-        return;
-    }
-
-    const saved = normalizeNodeSize(node[SAVED_SIZE_KEY]);
-
-    setNodeSize(
-        node,
-        Math.max(current[0], computed[0], saved?.[0] ?? 0),
-        Math.max(current[1], computed[1], saved?.[1] ?? 0),
+function applyModeVisibility(node) {
+    const modeWidget = node.widgets?.find(
+        (widget) => widget.name === MODE_WIDGET
     );
-}
-function applyModeVisibility(node, options = {}) {
-    const modeWidget = node.widgets?.find((widget) => widget.name === MODE_WIDGET);
-    const selectedMode = String(modeWidget?.value ?? "scale longer dimension");
-    const activeWidgetName = MODE_WIDGET_MAP[selectedMode] ?? "longer_size";
+
+    const selectedMode = String(
+        modeWidget?.value ?? "scale longer dimension"
+    );
+
+    const activeWidgetName =
+        MODE_WIDGET_MAP[selectedMode] ?? "longer_size";
+
+    node[ACTIVE_WIDGET_KEY] = activeWidgetName;
 
     for (const widget of node.widgets ?? []) {
-        if (!MODE_SPECIFIC_WIDGETS.has(widget.name)) continue;
+        if (!MODE_SPECIFIC_WIDGETS.has(widget.name)) {
+            continue;
+        }
 
         if (widget.name === activeWidgetName) {
-            showWidget(node, widget);
+            showWidget(widget);
         } else {
-            hideWidget(node, widget);
+            hideWidget(widget);
         }
     }
 
-    resizeNodeToVisibleWidgets(node, options);
+    // Visibility changes alter widget-backed socket placement.
+    node._widgetSlotsDirty = true;
+
+    resizeNodeAfterVisibility(node);
     node.setDirtyCanvas?.(true, true);
     node.graph?.setDirtyCanvas?.(true, true);
 }
 
+function scheduleModeVisibility(node) {
+    requestAnimationFrame(() => {
+        applyModeVisibility(node);
+        requestAnimationFrame(() => applyModeVisibility(node));
+    });
+}
+
 function installVisibility(node) {
-    if (node[INSTALL_FLAG]) return;
+    if (node[INSTALL_FLAG]) {
+        return;
+    }
+
     node[INSTALL_FLAG] = true;
+    installSocketVisibility(node);
 
     const originalOnConfigure = node.onConfigure;
-    node.onConfigure = function (config) {
-        /*
-         * Capture the size from the serialized node configuration itself.
-         * During graph reconstruction, this.size may still contain ComfyUI's
-         * temporary nominal size when onConfigure begins.
-         */
-        const configuredSize = normalizeNodeSize(config?.size);
-        if (configuredSize) {
-            this[SAVED_SIZE_KEY] = configuredSize;
-        }
-
-        this[CONFIGURED_KEY] = true;
-
+    node.onConfigure = function () {
         const result = originalOnConfigure?.apply(this, arguments);
-
-        /*
-         * Apply visibility after restoration, then reinforce the saved size on
-         * the following frame in case the native image-preview setup performs
-         * another late layout pass.
-         */
-        requestAnimationFrame(() => {
-            applyModeVisibility(this);
-            requestAnimationFrame(() => applyModeVisibility(this));
-        });
-
+        scheduleModeVisibility(this);
         return result;
     };
 
-    const modeWidget = node.widgets?.find((widget) => widget.name === MODE_WIDGET);
+    const modeWidget = node.widgets?.find(
+        (widget) => widget.name === MODE_WIDGET
+    );
+
     if (modeWidget) {
         const originalCallback = modeWidget.callback;
+
         modeWidget.callback = function () {
             const result = originalCallback?.apply(this, arguments);
-            requestAnimationFrame(() => applyModeVisibility(node));
+            scheduleModeVisibility(node);
             return result;
         };
     }
 
-    requestAnimationFrame(() => {
-        applyModeVisibility(node, {
-            compactNewNode: !node[CONFIGURED_KEY],
-        });
-    });
+    scheduleModeVisibility(node);
 }
 
 app.registerExtension({
-    name: "JLC.LoadResizeImage.Visibility",
+    name: "JLC.LoadAndResizeImage.Visibility",
 
     async beforeRegisterNodeDef(nodeType, nodeData) {
-        if (!NODE_NAMES.has(nodeData?.name)) return;
+        if (!NODE_NAMES.has(nodeData?.name)) {
+            return;
+        }
 
         const originalOnNodeCreated = nodeType.prototype.onNodeCreated;
+
         nodeType.prototype.onNodeCreated = function () {
             const result = originalOnNodeCreated?.apply(this, arguments);
             installVisibility(this);

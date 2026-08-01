@@ -111,6 +111,17 @@ function removeOutputByName(node, name) {
     return true;
 }
 
+function syncOutputLinkSlots(node) {
+    if (!node.outputs || !node.graph?.links) return;
+
+    for (let slot = 0; slot < node.outputs.length; slot++) {
+        for (const linkId of node.outputs[slot].links || []) {
+            const link = node.graph.links[linkId];
+            if (link) link.origin_slot = slot;
+        }
+    }
+}
+
 function ensureOutput(node, name, type, slotOptions) {
     if (hasOutput(node, name)) return;
 
@@ -134,6 +145,8 @@ function rebuildImageOutputs(node, config, count) {
             config.outputSlotOptions,
         );
     }
+
+    syncOutputLinkSlots(node);
 }
 
 function resizeNodeToVisibleWidgets(node) {

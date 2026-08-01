@@ -65,6 +65,11 @@ from .nodes.util_nodes.jlc_seed_generator import JLC_SeedGenerator
 from .nodes.util_nodes.jlc_stage_boundary_vram_cleanup import JLC_StageBoundaryVRAMCleanup
 from .nodes.util_nodes.jlc_load_and_resize_image import JLC_LoadAndResizeImage
 from .nodes.util_nodes.jlc_resize_image import JLC_ResizeImage
+from .nodes.util_nodes.jlc_resize_images import JLC_ResizeImages
+from .nodes.util_nodes.jlc_dynamic_multi_set_get import (
+     JLC_DynamicMultiGet,
+     JLC_DynamicMultiSet,
+ )
 
 
 NODE_CLASS_MAPPINGS = {
@@ -98,6 +103,9 @@ NODE_CLASS_MAPPINGS = {
     "JLC_StageBoundaryVRAMCleanup": JLC_StageBoundaryVRAMCleanup,
     "JLC_LoadAndResizeImage": JLC_LoadAndResizeImage,
     "JLC_ResizeImage": JLC_ResizeImage,
+    "JLC_ResizeImages": JLC_ResizeImages,
+    "JLC_DynamicMultiSet": JLC_DynamicMultiSet,
+    "JLC_DynamicMultiGet": JLC_DynamicMultiGet,
 }
 
 
@@ -130,6 +138,9 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "JLC_StageBoundaryVRAMCleanup": "\u2003JLC Stage Boundary VRAM Cleanup",
     "JLC_LoadAndResizeImage": "\u2003JLC Load & Resize Image",
     "JLC_ResizeImage": "\u2003JLC Resize Image",
+    "JLC_ResizeImages": "\u2003JLC Resize Multiple Images",
+    "JLC_DynamicMultiSet": "\u2003JLC Dynamic Multi Set",
+    "JLC_DynamicMultiGet": "\u2003JLC Dynamic Multi Get",
 }
 
 

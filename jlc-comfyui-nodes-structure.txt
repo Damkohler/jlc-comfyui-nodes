@@ -1,5 +1,5 @@
 JLC ComfyUI Nodes Project Structure
-Generated: 2026-07-15 23:44:58
+Generated: 2026-08-01 09:49:29
 Root: C:\Users\josel\Stable_Diffusion\ComfyUI_V89\custom_nodes\JLC-ComfyUI-nodes
 Output: C:\Users\josel\Stable_Diffusion\ComfyUI_V89\custom_nodes\JLC-ComfyUI-nodes\jlc-comfyui-nodes-structure.txt
 Gitignore: C:\Users\josel\Stable_Diffusion\ComfyUI_V89\custom_nodes\JLC-ComfyUI-nodes\.gitignore
@@ -79,8 +79,10 @@ JLC-ComfyUI-nodes/
       jlc_lora_model_only_filter.py
     util_nodes/
       __init__.py
+      jlc_dynamic_multi_set_get.py
       jlc_load_and_resize_image.py
       jlc_resize_image.py
+      jlc_resize_images.py
       jlc_seed_generator.py
       jlc_stage_boundary_vram_cleanup.py
       TODO_seed_generator_randomize_replay.md
@@ -102,9 +104,11 @@ JLC-ComfyUI-nodes/
     jlc_dynamic_controlnet_orchestrator_adv_visibility.js
     jlc_dynamic_controlnet_orchestrator_visibility.js
     jlc_dynamic_lora_loader_visibility.js
-    jlc_frontend_boolean_and.js
+    jlc_dynamic_multi_set_get.js
+    jlc_frontend_boolean_logic.js
     jlc_load_and_resize_image_visibility.js
     jlc_node_icons.js
+    jlc_resize_images_visibility.js
     jlc_seed_display.js
   __init__.py
   .gitignore
@@ -116,6 +120,6 @@ JLC-ComfyUI-nodes/
 
 Summary:
   Folders shown: 15
-  Files shown:   93
-  Items skipped: 18
+  Files shown:   97
+  Items skipped: 17
   Gitignore patterns loaded: 54
