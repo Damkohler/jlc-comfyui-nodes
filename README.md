@@ -15,22 +15,15 @@
   <img src="https://img.shields.io/badge/status-active-brightgreen" alt="Status: active">
 </p>
 
-> [!IMPORTANT]
-> **ControlNet compatibility update — prior warning withdrawn**
->
-> The temporary ControlNet compatibility warning previously shown here is no longer applicable. The current ControlNet Composition, Orchestrator, Orchestrator Advanced, Apply Advanced, shared composition core, and dynamic slot-visibility paths have been audited, corrected, and validated against current ComfyUI sampler and model-management interfaces.
->
-> Compared with the prior release, the revised implementation provides **substantially improved VRAM handling and markedly reduced execution time** in the tested Flux and multi-ControlNet workflows. These gains come from internal composition optimizations, corrected cache and lifecycle integration, removal of unnecessary synchronization from the normal path, and alignment with current ComfyUI architecture.
->
-> Validation included demanding Flux workflows with multiple LoRAs, Union ControlNet models, repeated ControlNet use, and as many as four ControlNet slots. The previously observed catastrophic slowdown was traced primarily to launching ComfyUI with forced `--lowvram`, not to the JLC non-recursive composition architecture.
->
-> The current implementation was validated against ComfyUI commit `2a610155` from June 22, 2026, with frontend package `1.45.19`. See the detailed ControlNet guide for the full compatibility baseline, benchmark context, and runtime recommendations.
+JLC ComfyUI Nodes is a custom-node collection built around Non-Recursive ControlNet Composition, a method introduced by this project to replace recursively nested multi-ControlNet evaluation with a flattened composition path whose execution cost scales approximately linearly with the number of applied ControlNets, rather than accumulating the severe repeated work, runtime growth, and memory pressure of native recursive chains.
 
-**JLC ComfyUI Nodes** is a custom-node collection built around Non-Recursive ControlNet Composition, a method introduced by this project to replace recursively nested multi-ControlNet evaluation with a flattened composition path whose execution cost scales approximately linearly with the number of applied ControlNets, rather than accumulating the severe repeated work, runtime growth, and memory pressure of native recursive chains.
+The collection also includes supporting tools for padded inpainting and outpainting, dynamic ControlNet auxiliary preprocessing, dynamic LoRA loading, stage-boundary VRAM cleanup, multi-image resizing, compact wireless connections, and frontend workflow control.
 
-The collection also includes supporting tools for padded inpainting and outpainting, dynamic ControlNet auxiliary preprocessing, dynamic LoRA loading, stage-boundary VRAM cleanup, and other practical workflow utilities.
+Release 2.1.0 expands the utility family with JLC Resize Multiple Images, the production-ready JLC Dynamic Multi Set/Get pair, and JLC Boolean Logic (Frontend), which replaces the earlier dedicated AND prototype.
 
 Developed by J. L. Córdova, the project is especially focused on Flux-oriented image-generation pipelines, ControlNet-heavy workflows, multi-stage inference, LoRA experimentation, and advanced inpainting and outpainting.
+
+The current ControlNet Composition, Orchestrator, Orchestrator Advanced, Apply Advanced, shared composition core, and dynamic slot-visibility paths were audited and validated against ComfyUI commit 2a610155 from June 22, 2026, with frontend package 1.45.19. Validation included demanding Flux workflows with multiple LoRAs, Union ControlNet models, repeated ControlNet use, and as many as four ControlNet slots. See the detailed ControlNet guide for the full compatibility baseline, benchmark context, and runtime recommendations.
 
 ---
 
@@ -145,12 +138,15 @@ These nodes predeclare up to ten LoRA slots and use frontend visibility controls
 
 ### 5. Utility Nodes
 
-Small workflow-support nodes for seed discipline and stage-boundary memory hygiene.
+Workflow-support nodes for seed discipline, stage-boundary memory hygiene, image resizing, compact wireless connections, and frontend Switchboard control.
 
 This family includes:
 
 - **JLC Seed Generator** — shared seed source that keeps the visible base seed stable while a frontend display reports the last seed actually used.
 - **JLC Stage Boundary VRAM Cleanup** — experimental latent-passthrough cleanup helper for advanced multi-stage workflows where selected heavy model objects should be unloaded before the next stage.
+- **JLC Resize Multiple Images** — applies one shared aspect-ratio-preserving resize policy to one through five images, with separate outputs and a convenience normalized batch output.
+- **JLC Dynamic Multi Set** and **JLC Dynamic Multi Get** — production-ready virtual nodes that replace groups of individual wireless Set/Get nodes with up to sixteen independently named, dynamically typed channels.
+- **JLC Boolean Logic (Frontend)** — pure client-side two-input logic for ComfyUI-Switchboard controllers, supporting AND, OR, XOR, NAND, NOR, XNOR, and the two directional AND-NOT operations. It is a Switchboard companion, not a standalone backend Boolean node.
 
 [Read the Utility Nodes guide](docs/utility-nodes.md)
 

@@ -1,6 +1,6 @@
 [project]
 name = "jlc-comfyui-nodes"
-version = "2.0.0"
+version = "2.1.0"
 description = "A ComfyUI custom-node collection focused primarily on ControlNet execution and composition improvements. Its centerpiece is the JLC non-recursive ControlNet family, including Composition and Orchestrator nodes that replace recursive multi-ControlNet chaining with isolated ControlNet evaluation and deterministic weighted fusion while preserving native single-ControlNet behavior. These nodes are intended for ControlNet-heavy Flux and diffusion workflows where recursive chaining can become difficult to reason about, slow, or memory-sensitive. The collection also includes practical workflow tools that support these pipelines, including graph-safe ControlNet Apply variants, shared-cache ControlNet loading, dynamic ControlNet Aux preprocessing, padded image/latent helpers for inpainting and outpainting, dynamic LoRA loaders, seed utilities, and stage-boundary VRAM cleanup helpers."
 authors = [
     { name = "J. L. Córdova", email = "jose.l.cordova@gmail.com" }

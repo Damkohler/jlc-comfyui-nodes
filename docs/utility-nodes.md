@@ -4,11 +4,14 @@ This chapter covers the JLC utility-node family:
 
 - [JLC Seed Generator](#jlc-seed-generator)
 - [Future Seed Generator Direction: Randomize Replay](#future-seed-generator-direction-randomize-replay)
+- [JLC Resize Multiple Images](#jlc-resize-multiple-images)
+- [JLC Dynamic Multi Set/Get](#jlc-dynamic-multi-setget)
+- [JLC Boolean Logic (Frontend)](#jlc-boolean-logic-frontend)
 - [JLC Stage Boundary VRAM Cleanup](#jlc-stage-boundary-vram-cleanup)
 - [Choosing the Right Utility Node](#choosing-the-right-utility-node)
 - [Example Workflows](#example-workflows)
 
-These nodes are not image-generation algorithms by themselves. They are workflow-support nodes intended to make larger ComfyUI graphs easier to run, repeat, debug, or stage.
+These nodes are not image-generation algorithms by themselves. They are workflow-support nodes intended to make larger ComfyUI graphs easier to connect, resize, control, run, repeat, debug, or stage.
 
 ---
 
@@ -148,6 +151,56 @@ This planned feature should apply only to `randomize` mode. It is unnecessary fo
 
 ---
 
+## JLC Resize Multiple Images
+
+**JLC Resize Multiple Images** resizes one through five independent IMAGE inputs with the same controls and aspect-ratio-preserving policy used by **JLC Resize Image**.
+
+- `slot_count` selects the active inputs and individual outputs.
+- Each active image is resized from its own source dimensions and keeps its own calculated output geometry.
+- `image_1` through `image_5` expose the resized results separately.
+- The trailing `batch` output provides a convenience batch. When active results differ in size, later images are normalized to the first active result's geometry before concatenation, following ComfyUI's legacy ImageBatch behavior.
+- **Update Visible Slots** applies the requested one-to-five socket layout in the frontend. Inactive backend outputs remain positionally stable and return `None`.
+
+Use the individual outputs when each image should retain its calculated dimensions. Use `batch` only when a downstream node requires one normalized IMAGE batch.
+
+---
+
+## JLC Dynamic Multi Set/Get
+
+**JLC Dynamic Multi Set** and **JLC Dynamic Multi Get** are production-ready virtual nodes for replacing large groups of individual wireless Set/Get nodes with one compact pair. Each row is an independently named channel and may carry a different ComfyUI socket type.
+
+- The nodes start with two rows and grow automatically when the final available row is connected, up to sixteen channels.
+- Disconnecting a used row removes that row when safe and compacts the remaining rows while preserving their names, types, stable identities, and physical links.
+- Connected unnamed Set rows receive unique default names such as `channel_1`; Set names remain editable.
+- Get rows select from available connected channels. A Set rename propagates to Gets bound to that Set row.
+- Types are inferred dynamically, so a single pair can carry IMAGE, MASK, CONDITIONING, LATENT, VAE, INT, custom objects, and other ComfyUI types.
+- Values resolve through ComfyUI's virtual graph-link interfaces before backend execution; no Python or JavaScript runtime value registry is used.
+
+JLC Multi Get can also select ordinary KJ `SetNode` channels when KJNodes is installed. Ordinary KJ `GetNode` does not currently resolve JLC Multi Set rows. The JLC pair works independently when KJNodes is absent.
+
+---
+
+## JLC Boolean Logic (Frontend)
+
+**JLC Boolean Logic (Frontend)** is a pure client-side virtual node intended specifically for use with the ComfyUI-Switchboard Group Controller and Node Controller nodes. It replaces the earlier dedicated **JLC Frontend Boolean AND** prototype.
+
+The selectable two-input operations are:
+
+- AND
+- OR
+- XOR
+- NAND
+- NOR
+- XNOR
+- A AND NOT B
+- B AND NOT A
+
+The node resolves frontend-readable Boolean values in real time and exposes the calculated result synchronously so Switchboard can update controlled groups before prompt execution. Both inputs must be connected and frontend-resolvable. Disconnected, backend-only, or unresolved inputs fail closed to `false`, including for NAND, NOR, and XNOR.
+
+This node is never submitted to the Python backend. It is not intended as a standalone Boolean logic node for ordinary backend-executed workflow decisions.
+
+---
+
 ## JLC Stage Boundary VRAM Cleanup
 
 **JLC Stage Boundary VRAM Cleanup** is an experimental latent-passthrough cleanup node for advanced multi-stage workflows.
@@ -251,6 +304,9 @@ The broad options may cause later nodes to reload models, which can increase exe
 | Feed the same seed into multiple samplers or stages | JLC Seed Generator |
 | Keep the visible seed stable while viewing the last seed actually used | JLC Seed Generator |
 | Prepare for future repeatable randomized seed trials | JLC Seed Generator, with planned randomize replay enhancement |
+| Resize up to five images with one shared policy while retaining separate outputs | JLC Resize Multiple Images |
+| Replace many individual wireless Set/Get nodes with compact mixed-type channels | JLC Dynamic Multi Set/Get |
+| Gate Switchboard-controlled groups from two frontend-readable Boolean inputs | JLC Boolean Logic (Frontend) |
 | Pass a latent across a deliberate stage boundary while trying to free selected model objects | JLC Stage Boundary VRAM Cleanup |
 | Force a guaranteed complete VRAM reset | Not guaranteed by these nodes; restart ComfyUI if a true reset is required |
 
@@ -258,7 +314,7 @@ The broad options may cause later nodes to reload models, which can increase exe
 
 ## Example Workflows
 
-These are not standalone use nodes; to see examples of use, consult workflows in other sections of this repository. 
+No new showcase workflows are included for these utility additions. Consult workflows in the other documentation sections for examples of the broader node collection in use.
 
 ---
 
