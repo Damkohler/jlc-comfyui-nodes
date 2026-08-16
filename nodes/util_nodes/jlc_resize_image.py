@@ -76,7 +76,7 @@ import torch
 from nodes import MAX_RESOLUTION
 
 from ...jlc_custom_nodes_versions import JLC_UTIL_NODES_VERSION
-from .jlc_load_and_resize_image import (
+from .jlc_load_resize_encode_image import (
     RESIZE_MODES,
     SCALE_METHODS,
     calculate_target_dimensions,

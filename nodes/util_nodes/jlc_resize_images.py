@@ -86,7 +86,7 @@ import torch
 import torch.nn.functional as torch_functional
 
 from ...jlc_custom_nodes_versions import JLC_UTIL_NODES_VERSION
-from .jlc_load_and_resize_image import (
+from .jlc_load_resize_encode_image import (
     _resize_image,
     calculate_target_dimensions,
 )

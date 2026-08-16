@@ -1,5 +1,5 @@
 """
-JLC Dynamic Multi Set/Get — Python Declaration Helper
+JLC Multi Set/Get — Python Declaration Helper
 ------------------------------------------------------
 
 - JLC ComfyUI Nodes Collection
@@ -11,8 +11,8 @@ JLC Dynamic Multi Set/Get — Python Declaration Helper
 
 - Helper Purpose
   - Declares the backend-visible classes for:
-        • JLC Dynamic Multi Set
-        • JLC Dynamic Multi Get
+        • JLC Multi Set
+        • JLC Multi Get
 
   - The companion frontend file `web/jlc_dynamic_multi_set_get.js` is the
     primary implementation. It owns dynamic rows, channel naming and choices,
@@ -21,7 +21,7 @@ JLC Dynamic Multi Set/Get — Python Declaration Helper
 
   - This Python module provides:
         • ComfyUI class registration surfaces
-        • two initial wildcard input/output declarations
+        • one initial wildcard input/output declaration
         • descriptions and release metadata
         • stateless fallback methods if the frontend extension does not load
 
@@ -58,17 +58,17 @@ from ...jlc_custom_nodes_versions import JLC_UTIL_NODES_VERSION
 
 
 MANIFEST = {
-    "name": "JLC Dynamic Multi Set/Get",
+    "name": "JLC Multi Set/Get",
     "version": JLC_UTIL_NODES_VERSION,
     "author": "J. L. Córdova",
     "description": (
-        "Frontend-driven virtual-node pair providing two-to-sixteen dynamic, "
+        "Frontend-driven virtual-node pair providing one-to-twenty-four automatically managed, "
         "independently named wildcard Set/Get channels. The JavaScript "
         "implementation manages graph-local channel discovery, automatic names, "
         "restricted Get selection, stable rename propagation, dynamic row "
-        "growth and compaction, type inference, responsive layout, and stateless "
-        "resolution to the real upstream ComfyUI graph links before prompt "
-        "submission."
+        "growth and compaction, type inference, three-stage responsive full / "
+        "compact / bus-bar presentation, and stateless resolution to the real "
+        "upstream ComfyUI graph links before prompt submission."
     ),
 }
 
@@ -84,16 +84,17 @@ ANY_TYPE = _AnyType("*")
 
 
 class JLC_DynamicMultiSet:
-    """Frontend-virtual multi-channel Set with two initial wildcard rows."""
+    """Frontend-virtual multi-channel Set with one initial wildcard row."""
 
     CATEGORY = "utils"
     FUNCTION = "passthrough"
-    RETURN_TYPES = (ANY_TYPE, ANY_TYPE)
-    RETURN_NAMES = ("value_1", "value_2")
+    RETURN_TYPES = (ANY_TYPE,)
+    RETURN_NAMES = ("value_1",)
     DESCRIPTION = (
-        "Two-to-sixteen independently named wildcard channels. The frontend "
+        "One-to-twenty-four independently named wildcard channels. The frontend "
         "resolves passthrough outputs and wireless consumers to real graph "
-        "links; no runtime value registry is used."
+        "links; no runtime value registry is used. KJ compatibility: KJ SetNode → "
+        "JLC Multi Get supported; JLC Multi Set → KJ GetNode not supported."
     )
 
     @classmethod
@@ -101,24 +102,24 @@ class JLC_DynamicMultiSet:
         return {
             "optional": {
                 "value_1": (ANY_TYPE,),
-                "value_2": (ANY_TYPE,),
             }
         }
 
-    def passthrough(self, value_1=None, value_2=None):
-        return (value_1, value_2)
+    def passthrough(self, value_1=None):
+        return (value_1,)
 
 
 class JLC_DynamicMultiGet:
-    """Frontend-virtual multi-channel Get with two initial wildcard rows."""
+    """Frontend-virtual multi-channel Get with one initial wildcard row."""
 
     CATEGORY = "utils"
     FUNCTION = "unresolved_frontend_node"
-    RETURN_TYPES = (ANY_TYPE, ANY_TYPE)
-    RETURN_NAMES = ("value_1", "value_2")
+    RETURN_TYPES = (ANY_TYPE,)
+    RETURN_NAMES = ("value_1",)
     DESCRIPTION = (
-        "Resolves each named channel to a matching KJ Set or JLC Dynamic Multi "
-        "Set through ComfyUI's graph-level virtual-node protocol."
+        "Resolves each named channel to a matching KJ Set or JLC Multi "
+        "Set through ComfyUI's graph-level virtual-node protocol. KJ compatibility: "
+        "KJ SetNode → JLC Multi Get supported; JLC Multi Set → KJ GetNode not supported."
     )
 
     @classmethod
@@ -127,6 +128,6 @@ class JLC_DynamicMultiGet:
 
     def unresolved_frontend_node(self):
         raise RuntimeError(
-            "JLC Dynamic Multi Get is a frontend virtual node. Its web "
+            "JLC Multi Get is a frontend virtual node. Its web "
             "extension did not resolve this node before prompt submission."
         )

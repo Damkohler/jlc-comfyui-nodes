@@ -223,6 +223,55 @@ function applyModeVisibility(node) {
     node._widgetSlotsDirty = true;
 }
 
+function getOutputRowHeight(node, count) {
+    if (typeof node.getOutputPos !== "function") return 20;
+
+    const firstOutputIndex = node.outputs?.findIndex(
+        (output) => output?.name === imageSlotName(1)
+    ) ?? -1;
+    const secondVisibleIndex =
+        count >= 2
+            ? node.outputs?.findIndex(
+                  (output) => output?.name === imageSlotName(2)
+              ) ?? -1
+            : node.outputs?.findIndex(
+                  (output) => output?.name === BATCH_OUTPUT
+              ) ?? -1;
+
+    if (firstOutputIndex < 0 || secondVisibleIndex < 0) return 20;
+
+    const firstPos = node.getOutputPos(firstOutputIndex, [0, 0]);
+    const secondPos = node.getOutputPos(secondVisibleIndex, [0, 0]);
+    const rowHeight = Math.abs((secondPos?.[1] ?? 0) - (firstPos?.[1] ?? 0));
+
+    return Number.isFinite(rowHeight) && rowHeight > 0 ? rowHeight : 20;
+}
+
+function getHiddenOutputHeight(node) {
+    const count = Math.max(
+        1,
+        Math.min(
+            MAX_SLOTS,
+            Number.parseInt(node[ACTIVE_SLOT_COUNT_KEY] ?? 1, 10) || 1
+        )
+    );
+
+    /*
+     * The backend always declares image_1..image_5 plus batch, but the
+     * frontend visually exposes only image_1..image_n plus batch.
+     *
+     * Do NOT derive this correction from node.inputs.length. ComfyUI keeps
+     * widget-backed/convertible sockets in node.inputs even when this
+     * extension moves those sockets out of render space. Counting them made
+     * the previous compact-height calculation conclude that there were no
+     * hidden rows at all.
+     *
+     * Exactly MAX_SLOTS - count individual output rows are hidden.
+     */
+    const hiddenOutputRows = Math.max(0, MAX_SLOTS - count);
+    return hiddenOutputRows * getOutputRowHeight(node, count);
+}
+
 function resizeNodeToVisibleContent(node) {
     if (typeof node.computeSize !== "function" || !node.size) return;
 
@@ -231,7 +280,10 @@ function resizeNodeToVisibleContent(node) {
 
     const currentWidth = node.size[0] ?? computed[0] ?? 260;
     const targetWidth = Math.max(currentWidth, computed[0] ?? currentWidth);
-    const targetHeight = computed[1];
+    const targetHeight = Math.max(
+        1,
+        (computed[1] ?? node.size[1] ?? 1) - getHiddenOutputHeight(node)
+    );
 
     if (typeof node.setSize === "function") {
         node.setSize([targetWidth, targetHeight]);

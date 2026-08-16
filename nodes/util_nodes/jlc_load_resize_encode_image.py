@@ -1,6 +1,6 @@
 """
-JLC Load & Resize Image
------------------------
+JLC Load, Resize & Encode Image
+-------------------------------
 
 - JLC ComfyUI Nodes Collection
   - This node is part of the **JLC Custom Nodes for ComfyUI**
@@ -9,8 +9,8 @@ JLC Load & Resize Image
   - Repository
     https://github.com/Damkohler/jlc-comfyui-nodes
 
-  - The JLC nodes focus on practical workflow improvements for image-generation
-    pipelines, particularly:
+  - The JLC nodes focus on practical workflow improvements for
+    image-generation pipelines, particularly:
         • general workflow utilities
         • Flux-based workflows
         • LoRA experimentation
@@ -18,12 +18,28 @@ JLC Load & Resize Image
         • advanced inpainting / outpainting pipelines
 
 - Node Purpose
-  - The **JLC Load & Resize Image** node combines:
+  - The **JLC Load, Resize & Encode Image** node combines:
         • ComfyUI's native upload / drag-and-drop image-loader contract
         • aspect-ratio-preserving resize math aligned with ComfyUI's
           `Resize Image/Mask` node
         • aligned IMAGE and MASK resizing
         • explicit final dimension divisibility
+        • optional VAE encoding of the final resized IMAGE
+
+  - The VAE input is optional:
+        • with no VAE connected, the node behaves as a load-and-resize utility
+          and returns `None` on the LATENT output
+        • with a VAE connected, the resized IMAGE is encoded through the
+          supplied VAE and returned using ComfyUI's standard LATENT contract
+
+  - Existing output ordering is intentionally preserved for workflow
+    compatibility. LATENT is appended after the original IMAGE, MASK, width,
+    and height outputs.
+
+  - The implementation class and filename expose the expanded encoding
+    capability, while the existing registered ComfyUI node identifier
+    `JLC_LoadAndResizeImage` should be retained in `NODE_CLASS_MAPPINGS` so
+    existing workflows continue to resolve without migration.
 
   - The node intentionally excludes freeform independent width/height resizing.
     Every exposed resize mode preserves the source aspect ratio before the final
@@ -50,12 +66,16 @@ JLC Load & Resize Image
   - If a calculated edge is smaller than the requested divisor, that edge is
     clamped to one divisor so the output remains valid and divisible.
 
-- Image and Mask Contract
+- Image, Mask, and Latent Contract
   - IMAGE output uses ComfyUI BHWC layout.
   - MASK output uses ComfyUI BHW layout.
   - The alpha-derived mask from the image loader is resized to exactly the same
     output width and height as the image.
   - Images without alpha still return a correctly sized all-zero mask.
+  - LATENT is the final output so all original output indices remain unchanged.
+  - When VAE is connected, LATENT follows ComfyUI's standard
+    `{"samples": tensor}` representation.
+  - When VAE is not connected, LATENT is `None`.
 
 - Upstream Inspiration and Attribution
   - The compact load-and-resize workflow concept is inspired by the practical
@@ -64,6 +84,10 @@ JLC Load & Resize Image
   - Resize behavior is independently implemented using ComfyUI's public image
     loading and `common_upscale` interfaces and the aspect-ratio math used by the
     native `Resize Image/Mask` implementation.
+
+  - Optional VAE encoding follows ComfyUI's native VAE Encode contract by
+    calling `vae.encode(pixels)` on the final resized IMAGE and wrapping the
+    encoded tensor as a LATENT samples dictionary.
 
   - This node does not import or require KJNodes.
 
@@ -97,15 +121,16 @@ from ...jlc_custom_nodes_versions import JLC_UTIL_NODES_VERSION
 
 
 MANIFEST = {
-    "name": "JLC Load & Resize Image",
+    "name": "JLC Load, Resize & Encode Image",
     "version": JLC_UTIL_NODES_VERSION,
     "author": "J. L. Córdova",
     "description": (
         "Upload- and drag-and-drop-capable image loader with aligned IMAGE and "
         "MASK outputs, aspect-ratio-preserving resize modes modeled after "
         "ComfyUI's native Resize Image/Mask math, dynamic frontend visibility "
-        "for mode-specific controls, and final width/height rounding to a "
-        "user-selected divisible-by value."
+        "for mode-specific controls, final width/height rounding to a "
+        "user-selected divisible-by value, and optional VAE encoding of the "
+        "resized IMAGE to a LATENT output."
     ),
 }
 
@@ -228,7 +253,8 @@ def _resize_image(
 ) -> torch.Tensor:
     if not isinstance(image, torch.Tensor) or image.ndim != 4:
         raise ValueError(
-            "JLC Load & Resize Image expected an IMAGE tensor in BHWC layout."
+            "JLC Load, Resize & Encode Image expected an IMAGE tensor "
+            "in BHWC layout."
         )
 
     image_bchw = image.movedim(-1, 1)
@@ -265,7 +291,8 @@ def _resize_mask(
         mask = mask.unsqueeze(0)
     if mask.ndim != 3:
         raise ValueError(
-            "JLC Load & Resize Image expected a MASK tensor in BHW layout."
+            "JLC Load, Resize & Encode Image expected a MASK tensor "
+            "in BHW layout."
         )
 
     if mask.shape[0] == 1 and image_batch > 1:
@@ -286,25 +313,41 @@ def _resize_mask(
     return resized.squeeze(1).contiguous().clamp_(0.0, 1.0)
 
 
-class JLC_LoadAndResizeImage(LoadImage):
-    """Load an image, preserve aspect ratio, and resize its mask in lockstep."""
+def _encode_image(vae, image: torch.Tensor):
+    """Encode IMAGE through a supplied ComfyUI VAE into LATENT format."""
 
-    FUNCTION = "load_and_resize"
+    if vae is None:
+        return None
+
+    encoded = vae.encode(image)
+    return {"samples": encoded}
+
+
+class JLC_LoadResizeEncodeImage(LoadImage):
+    """Load and resize IMAGE/MASK, with optional VAE encoding to LATENT."""
+
+    FUNCTION = "load_resize_encode"
     CATEGORY = "utils/image"
-    RETURN_TYPES = ("IMAGE", "MASK", "INT", "INT")
-    RETURN_NAMES = ("image", "mask", "width", "height")
+    RETURN_TYPES = ("IMAGE", "MASK", "INT", "INT", "LATENT")
+    RETURN_NAMES = ("image", "mask", "width", "height", "latent")
     OUTPUT_NODE = False
 
     DESCRIPTION = (
-        "Upload or drag-and-drop an image, then resize IMAGE and MASK together "
-        "with aspect-ratio-preserving math and final divisible-by alignment."
+        "Upload or drag-and-drop an image, resize IMAGE and MASK together with "
+        "aspect-ratio-preserving math and final divisible-by alignment, and "
+        "optionally encode the resized IMAGE when a VAE is connected."
     )
     SEARCH_ALIASES = [
         "load resize image",
+        "load resize encode",
+        "load resize latent",
+        "encode image",
+        "image to latent",
         "image loader resize",
         "drag drop resize",
         "aspect ratio resize",
         "resize image and mask",
+        "vae encode",
     ]
 
     @classmethod
@@ -421,28 +464,40 @@ class JLC_LoadAndResizeImage(LoadImage):
                         ),
                     },
                 ),
-            }
+            },
+            "optional": {
+                "vae": (
+                    "VAE",
+                    {
+                        "tooltip": (
+                            "Optional. When connected, encodes the final resized "
+                            "IMAGE and returns it through the LATENT output. "
+                            "Without a VAE, LATENT returns None."
+                        ),
+                    },
+                ),
+            },
         }
 
     @classmethod
     def IS_CHANGED(cls, image, **kwargs):
-        """Preserve LoadImage file hashing while accepting resize widgets.
+        """Preserve LoadImage file hashing while accepting added inputs.
 
         ComfyUI includes this node's full input dictionary when checking for
         external changes. The inherited LoadImage.IS_CHANGED method accepts
-        only `image`, so the additional resize controls must be absorbed here.
-        Normal prompt-input caching still tracks those controls independently.
+        only `image`, so resize controls and the optional VAE are absorbed here.
+        Normal prompt-input caching still tracks those inputs independently.
         """
 
         return LoadImage.IS_CHANGED(image)
 
     @classmethod
     def VALIDATE_INPUTS(cls, image, **kwargs):
-        """Delegate image-path validation while accepting resize widgets."""
+        """Delegate image-path validation while accepting added inputs."""
 
         return LoadImage.VALIDATE_INPUTS(image)
 
-    def load_and_resize(
+    def load_resize_encode(
         self,
         image,
         resize_by,
@@ -454,6 +509,7 @@ class JLC_LoadAndResizeImage(LoadImage):
         megapixels,
         scale_method,
         divisible_by,
+        vae=None,
     ):
         loaded = super().load_image(image)
 
@@ -502,9 +558,12 @@ class JLC_LoadAndResizeImage(LoadImage):
             dtype=resized_image.dtype,
         )
 
+        latent = _encode_image(vae, resized_image)
+
         return (
             resized_image,
             resized_mask,
             int(target_width),
             int(target_height),
+            latent,
         )

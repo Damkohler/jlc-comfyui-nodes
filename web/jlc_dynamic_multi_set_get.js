@@ -1,5 +1,5 @@
 /*
- * JLC Dynamic Multi Set/Get
+ * JLC Multi Set/Get
  * -------------------------
  *
  * JLC ComfyUI Nodes Collection
@@ -10,8 +10,8 @@
  *   https://github.com/Damkohler/jlc-comfyui-nodes
  *
  * Node Purpose:
- *   Implements the primary behavior for the JLC Dynamic Multi Set and
- *   JLC Dynamic Multi Get virtual-node pair.
+ *   Implements the primary behavior for the JLC Multi Set and
+ *   JLC Multi Get virtual-node pair.
  *
  *   The nodes provide compact, independently named wireless channels for
  *   reducing long or repetitive workflow connections. A Multi Set row accepts
@@ -21,7 +21,7 @@
  * Frontend Execution Model:
  *   - This JavaScript file is the primary implementation of the node family.
  *   - The companion Python module supplies ComfyUI registration declarations,
- *     two initial wildcard sockets, metadata, and stateless fallback methods.
+ *     one initial wildcard socket, metadata, and stateless fallback methods.
  *   - The nodes are marked as virtual nodes.
  *   - Connected outputs resolve to the real upstream graph link before prompt
  *     submission through ComfyUI's virtual-node interfaces.
@@ -29,13 +29,20 @@
  *     registry, avoiding stale cross-prompt state and execution-order coupling.
  *
  * Dynamic Row Semantics:
- *   - Both nodes begin with two visible rows and support up to sixteen rows.
+ *   - Both nodes begin with one visible row and support up to twenty-four rows.
  *   - Connecting the final available row creates a new trailing row.
  *   - Disconnecting a used row removes that specific row when safe and compacts
  *     surviving rows upward while preserving their stable row identities.
  *   - Multi-consumer Get outputs remain until their final link is removed.
  *   - Set rows remain while either the input or passthrough output is linked.
- *   - At least two visible rows are retained for an empty or minimal node.
+ *   - At least one visible row is retained for an empty or minimal node.
+ *
+ * Responsive Presentation:
+ *   - Full width shows channel widgets plus normal socket-side labels.
+ *   - Compact width keeps the widgets and suppresses redundant socket labels.
+ *   - Micro width keeps the widgets visible at minimum width; only the socket
+ *     columns and compact channel controls consume horizontal space.
+ *   - Width changes are presentation-only and fully reversible.
  *
  * Channel Naming and Type Behavior:
  *   - Connected unnamed Set rows receive graph-local default channel names.
@@ -96,13 +103,41 @@ const KIND_KEY = "jlc_dynamic_kind";
 const FORMAT_KEY = "jlc_dynamic_format";
 const FORMAT_VERSION = 4;
 
-const MIN_ROWS = 2;
-const MAX_ROWS = 16;
+const MIN_ROWS = 1;
+const MAX_ROWS = 24;
 const DEFAULT_NODE_WIDTH = 360;
-const MIN_NODE_WIDTH = 270;
-const MIN_WIDGET_WIDTH = 116;
-const SET_WIDGET_GUTTER = 214;
-const GET_WIDGET_GUTTER = 132;
+
+// Three-stage responsive presentation:
+//   full    -> widgets + normal socket-side labels
+//   compact -> widgets remain visible; redundant socket labels disappear
+//   micro   -> widgets remain visible at minimum width with very small gutters
+//
+// Hysteresis keeps the presentation from flickering when the resize handle
+// hovers near a boundary.
+const FULL_LAYOUT_ENTER_WIDTH = 340;
+const FULL_LAYOUT_EXIT_WIDTH = 315;
+const MICRO_LAYOUT_ENTER_WIDTH = 205;
+const MICRO_LAYOUT_EXIT_WIDTH = 225;
+const MIN_NODE_WIDTH = 150;
+
+const MIN_WIDGET_WIDTH = 88;
+
+// In Full mode the gutter is calculated from the actual visible output labels,
+// bounded by these limits. This avoids reserving a large fixed empty region for
+// hypothetical long names while still protecting real labels such as
+// CONDITIONING.
+const SET_FULL_GUTTER_MIN = 82;
+const SET_FULL_GUTTER_MAX = 178;
+const GET_FULL_GUTTER_MIN = 64;
+const GET_FULL_GUTTER_MAX = 126;
+
+// In Compact/Micro modes the output-side text is hidden, so only a small pin
+// safety gutter is needed.
+const SET_COMPACT_GUTTER = 38;
+const GET_COMPACT_GUTTER = 30;
+const SET_MICRO_GUTTER = 44;
+const GET_MICRO_GUTTER = 30;
+
 const ROW_HEIGHT = 26;
 const ROW_GAP = 2;
 const WIDGET_TOP = 4;
@@ -335,17 +370,27 @@ function setRowType(node, index, type) {
         output.name = rowSlotName(index);
         output.type = valueType;
 
-        // The selected Set channel is already visible in the Get combo widget.
-        // On the Get side, show only the resolved type beside the output socket
-        // so long channel names cannot collide with types such as CONDITIONING.
-        // Keep a simple row label while the source remains unresolved.
-        output.label = isJlcGet(node)
-            ? valueType === "*"
-                ? `Get ${index + 1}`
-                : valueType
-            : valueType === "*"
-              ? socketLabel
-              : `${socketLabel} · ${valueType}`;
+        const presentationMode =
+            node.__jlcResponsiveMode ??
+            responsiveModeForWidth(node, node.size?.[0]);
+
+        if (presentationMode !== "full") {
+            // Compact and Micro modes deliberately suppress redundant
+            // socket-side text. Channel identity remains visible in the widget
+            // and socket color still communicates the resolved type.
+            output.label = BLANK_LABEL;
+        } else {
+            // Full mode preserves the established presentation:
+            //   Set -> channel name + type
+            //   Get -> resolved type only
+            output.label = isJlcGet(node)
+                ? valueType === "*"
+                    ? `Get ${index + 1}`
+                    : valueType
+                : valueType === "*"
+                  ? socketLabel
+                  : `${socketLabel} · ${valueType}`;
+        }
     }
 
     const widget = getRowWidget(node, row.id);
@@ -410,12 +455,102 @@ function desiredNodeHeight(node) {
     return WIDGET_TOP + normalizeRows(node).length * rowPitch() + 4;
 }
 
-function widgetWidthForNode(node, width = node.size?.[0]) {
+
+function responsiveModeForWidth(node, width = node.size?.[0]) {
+    const numericWidth = Number(width);
+    const nodeWidth = Number.isFinite(numericWidth)
+        ? numericWidth
+        : DEFAULT_NODE_WIDTH;
+    const previous = node.__jlcResponsiveMode;
+
+    // Hysteresis: once in a mode, require a little travel before crossing back
+    // through the same threshold.
+    if (previous === "full" && nodeWidth >= FULL_LAYOUT_EXIT_WIDTH) {
+        return "full";
+    }
+    if (previous === "micro" && nodeWidth < MICRO_LAYOUT_EXIT_WIDTH) {
+        return "micro";
+    }
+
+    if (nodeWidth >= FULL_LAYOUT_ENTER_WIDTH) return "full";
+    if (nodeWidth < MICRO_LAYOUT_ENTER_WIDTH) return "micro";
+    return "compact";
+}
+
+function estimatedCanvasTextWidth(text) {
+    // LiteGraph's normal node font is close enough to ~7 px/character for the
+    // purpose of reserving label space. Clamp through the mode-specific gutter
+    // bounds below so this estimate can never dominate the layout.
+    return String(text ?? "").length * 7;
+}
+
+function fullOutputLabelForRow(node, row, index) {
+    const valueType = normalizedType(row?.type);
+    const displayName = String(row?.name ?? "").trim();
+    const socketLabel =
+        displayName || (isJlcSet(node) ? `Set ${index + 1}` : `Get ${index + 1}`);
+
+    if (isJlcGet(node)) {
+        return valueType === "*" ? `Get ${index + 1}` : valueType;
+    }
+
+    return valueType === "*"
+        ? socketLabel
+        : `${socketLabel} · ${valueType}`;
+}
+
+function fullWidgetGutter(node) {
+    let widest = 0;
+    normalizeRows(node).forEach((row, index) => {
+        widest = Math.max(
+            widest,
+            estimatedCanvasTextWidth(fullOutputLabelForRow(node, row, index))
+        );
+    });
+
+    // Include output-pin/margin breathing room in addition to the text itself.
+    const estimated = widest + 30;
+    if (isJlcSet(node)) {
+        return Math.max(
+            SET_FULL_GUTTER_MIN,
+            Math.min(SET_FULL_GUTTER_MAX, estimated)
+        );
+    }
+    return Math.max(
+        GET_FULL_GUTTER_MIN,
+        Math.min(GET_FULL_GUTTER_MAX, estimated)
+    );
+}
+
+function widgetGutterForMode(node, mode) {
+    if (mode === "full") return fullWidgetGutter(node);
+    if (mode === "micro") {
+        return isJlcSet(node) ? SET_MICRO_GUTTER : GET_MICRO_GUTTER;
+    }
+    return isJlcSet(node) ? SET_COMPACT_GUTTER : GET_COMPACT_GUTTER;
+}
+
+function applyWidgetPresentation(node, mode, width) {
+    for (const widget of node.widgets ?? []) {
+        if (widget?.[WIDGET_FLAG] !== true) continue;
+
+        // The responsive implementation intentionally keeps widgets
+        // alive and visible in every width state.
+        widget.hidden = false;
+        widget.width = widgetWidthForNode(node, width, mode);
+    }
+}
+
+function widgetWidthForNode(
+    node,
+    width = node.size?.[0],
+    mode = node.__jlcResponsiveMode ?? responsiveModeForWidth(node, width)
+) {
     const nodeWidth = Math.max(
         MIN_NODE_WIDTH,
         Number(width) || DEFAULT_NODE_WIDTH
     );
-    const gutter = isJlcSet(node) ? SET_WIDGET_GUTTER : GET_WIDGET_GUTTER;
+    const gutter = widgetGutterForMode(node, mode);
     return Math.max(MIN_WIDGET_WIDTH, nodeWidth - gutter);
 }
 
@@ -441,12 +576,23 @@ function applyResponsiveLayout(node, requestedSize = node.size, fitHeight = fals
     node.size[1] = height;
     node.min_size = [MIN_NODE_WIDTH, desiredHeight];
 
-    for (const widget of node.widgets ?? []) {
-        if (widget?.[WIDGET_FLAG] !== true) continue;
-        widget.width = widgetWidthForNode(node, width);
-    }
+    const mode = responsiveModeForWidth(node, width);
+    const modeChanged = node.__jlcResponsiveMode !== mode;
+    node.__jlcResponsiveMode = mode;
 
-    node.setDirtyCanvas?.(true, true);
+    applyWidgetPresentation(node, mode, width);
+
+    // Refresh labels/widths only; graph structure, channel bindings, widget
+    // values, and serialization state are untouched by presentation changes.
+    normalizeRows(node).forEach((row, index) => {
+        setRowType(node, index, row.type);
+    });
+
+    if (modeChanged) {
+        node.setDirtyCanvas?.(true, true);
+    } else {
+        node.setDirtyCanvas?.(true, false);
+    }
     return node.size;
 }
 
@@ -991,7 +1137,7 @@ function scheduleMaintainRows(node) {
             maintainRows(node);
         } catch (error) {
             console.error(
-                "[JLC Dynamic Multi Set/Get] Structural maintenance failed",
+                "[JLC Multi Set/Get] Structural maintenance failed",
                 error
             );
         }
@@ -1010,7 +1156,7 @@ function describeCandidate(candidate) {
         return `KJ SetNode ${String(candidate.node.id)}`;
     }
     return (
-        `JLC Dynamic Multi Set ${String(candidate.node.id)}, ` +
+        `JLC Multi Set ${String(candidate.node.id)}, ` +
         `row ${candidate.rowIndex + 1}`
     );
 }
@@ -1036,18 +1182,57 @@ function candidateSource(candidate) {
     };
 }
 
+function setGetValidationError(node, hasError) {
+    if (!isJlcGet(node)) return;
+
+    const next = hasError === true;
+    const stateChanged = node.__jlcGetValidationError !== next;
+    const oldRenderState = node.has_errors;
+
+    if (next) {
+        if (node.__jlcGetValidationError !== true) {
+            node.__jlcGetValidationOwnsErrorFlag = node.has_errors !== true;
+        }
+        node.__jlcGetValidationError = true;
+        node.has_errors = true;
+    } else {
+        node.__jlcGetValidationError = false;
+        if (node.__jlcGetValidationOwnsErrorFlag === true) {
+            node.has_errors = false;
+        }
+        delete node.__jlcGetValidationOwnsErrorFlag;
+    }
+
+    if (oldRenderState !== node.has_errors) {
+        node.graph?.trigger?.("node:property:changed", {
+            type: "node:property:changed",
+            nodeId: node.id,
+            property: "has_errors",
+            oldValue: oldRenderState,
+            newValue: node.has_errors,
+        });
+    }
+
+    if (stateChanged || oldRenderState !== node.has_errors) {
+        node.setDirtyCanvas?.(true, true);
+    }
+}
+
 function resolveChannel(node, outputIndex, throwOnError) {
     syncNames(node);
     const row = normalizeRows(node)[outputIndex];
     const rowNumber = outputIndex + 1;
 
     const fail = (message) => {
-        if (throwOnError) throw new Error(message);
+        if (throwOnError) {
+            setGetValidationError(node, true);
+            throw new Error(message);
+        }
         return null;
     };
 
     if (!row) {
-        return fail(`JLC Dynamic Multi Get row ${rowNumber} does not exist.`);
+        return fail(`JLC Multi Get row ${rowNumber} does not exist.`);
     }
 
     let candidate = null;
@@ -1055,7 +1240,7 @@ function resolveChannel(node, outputIndex, throwOnError) {
         candidate = channelDescriptorByKey(node.graph, row.sourceKey, false);
         if (!candidate) {
             return fail(
-                `JLC Dynamic Multi Get row ${rowNumber} selected channel ` +
+                `JLC Multi Get row ${rowNumber} selected channel ` +
                     `"${row.name || row.sourceKey}" is no longer available.`
             );
         }
@@ -1063,7 +1248,7 @@ function resolveChannel(node, outputIndex, throwOnError) {
         const candidates = setCandidates(node.graph, row.name);
         if (candidates.length > 1) {
             return fail(
-                `JLC Dynamic Multi Get row ${rowNumber} legacy channel ` +
+                `JLC Multi Get row ${rowNumber} legacy channel ` +
                     `"${row.name}" is ambiguous (${candidates
                         .map(describeCandidate)
                         .join("; ")}). Select a Set channel again.`
@@ -1075,7 +1260,7 @@ function resolveChannel(node, outputIndex, throwOnError) {
 
     if (!candidate) {
         return fail(
-            `JLC Dynamic Multi Get row ${rowNumber} has no Set channel selected.`
+            `JLC Multi Get row ${rowNumber} has no Set channel selected.`
         );
     }
 
@@ -1083,12 +1268,24 @@ function resolveChannel(node, outputIndex, throwOnError) {
     const source = candidateSource(candidate);
     if (!source) {
         return fail(
-            `JLC Dynamic Multi Get row ${rowNumber} channel "${row.name}": ` +
+            `JLC Multi Get row ${rowNumber} channel "${row.name}": ` +
                 `matching ${describeCandidate(candidate)} has no connected source value.`
         );
     }
 
     return { candidate, source };
+}
+
+function refreshGetValidationError(node) {
+    if (!isJlcGet(node) || node.__jlcGetValidationError !== true) return;
+
+    const hasUnresolvedRelevantRow = normalizeRows(node).some((_row, index) => {
+        return (
+            hasOutputLinks(node.outputs?.[index]) &&
+            resolveChannel(node, index, false) == null
+        );
+    });
+    setGetValidationError(node, hasUnresolvedRelevantRow);
 }
 
 function linkedInputType(node, index) {
@@ -1215,6 +1412,8 @@ function refreshGetTypes(node) {
             scheduleMaintainRows(node);
         }
     }
+
+    refreshGetValidationError(node);
 }
 
 function refreshAllGetTypes(root) {
@@ -1232,20 +1431,20 @@ function sourceForSetRow(node, slot, throwOnError) {
         return null;
     };
 
-    if (!row) return fail(`JLC Dynamic Multi Set row ${slot + 1} does not exist.`);
+    if (!row) return fail(`JLC Multi Set row ${slot + 1} does not exist.`);
     const input = node.inputs?.[slot];
     if (!input || input.link == null) {
         return fail(
-            `JLC Dynamic Multi Set row ${slot + 1}${
+            `JLC Multi Set row ${slot + 1}${
                 row.name ? ` channel "${row.name}"` : ""
             } has no connected source value.`
         );
     }
 
     const link = linkById(node.graph, input.link);
-    if (!link) return fail(`JLC Dynamic Multi Set row ${slot + 1} has a missing source link.`);
+    if (!link) return fail(`JLC Multi Set row ${slot + 1} has a missing source link.`);
     const sourceNode = nodeById(node.graph, link.origin_id);
-    if (!sourceNode) return fail(`JLC Dynamic Multi Set row ${slot + 1} has a missing source node.`);
+    if (!sourceNode) return fail(`JLC Multi Set row ${slot + 1} has a missing source node.`);
 
     return { link, node: sourceNode, slot: Number(link.origin_slot) };
 }
@@ -1257,7 +1456,7 @@ function installNode(node, kind) {
     node.properties ??= {};
     node.properties[KIND_KEY] = kind;
     node.properties[FORMAT_KEY] = FORMAT_VERSION;
-    node.properties[ROWS_KEY] ??= [newRow(false), newRow(false)];
+    node.properties[ROWS_KEY] ??= [newRow(false)];
     node.__jlcPendingRowRemovals ??= new Set();
     node.__jlcPendingSetTypeRows ??= new Set();
 
@@ -1447,7 +1646,7 @@ app.registerExtension({
                 installNode(this, kind);
             } catch (error) {
                 console.error(
-                    `[JLC Dynamic Multi Set/Get] Failed to initialize ${kind} node`,
+                    `[JLC Multi Set/Get] Failed to initialize ${kind} node`,
                     error
                 );
             }
@@ -1469,11 +1668,11 @@ app.registerExtension({
             installNode(node, kind);
         } catch (error) {
             console.error(
-                `[JLC Dynamic Multi Set/Get] Failed to initialize ${kind} node`,
+                `[JLC Multi Set/Get] Failed to initialize ${kind} node`,
                 error
             );
         }
     },
 });
 
-console.info("[JLC Dynamic Multi Set/Get] frontend extension loaded");
+console.info("[JLC Multi Set/Get] frontend extension loaded");

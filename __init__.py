@@ -43,7 +43,6 @@ from .nodes.jlc_controlnet_apply_advanced import JLC_ControlNetApplyAdvanced
 from .nodes.jlc_controlnet_composition import JLC_ControlNetComposition
 from .nodes.jlc_controlnet_orchestrator import JLC_ControlNetOrchestrator
 from .nodes.jlc_controlnet_orchestrator_adv import JLC_ControlNetOrchestratorAdvanced
-## from .nodes.jlc_controlnet_hint_prewarm import JLC_ControlNetHintPrewarm
 from .nodes.controlnet_aux_nodes.jlc_controlnet_aux_preproc_wrapper import JLC_DynamicAuxPreprocessorWrapper
 
 # LoRA Loaders
@@ -63,7 +62,7 @@ from .nodes.lora_loader_nodes.jlc_lora_loader_legacy_dynamic_wrappers import (
 # Utility Nodes
 from .nodes.util_nodes.jlc_seed_generator import JLC_SeedGenerator
 from .nodes.util_nodes.jlc_stage_boundary_vram_cleanup import JLC_StageBoundaryVRAMCleanup
-from .nodes.util_nodes.jlc_load_and_resize_image import JLC_LoadAndResizeImage
+from .nodes.util_nodes.jlc_load_resize_encode_image import JLC_LoadResizeEncodeImage
 from .nodes.util_nodes.jlc_resize_image import JLC_ResizeImage
 from .nodes.util_nodes.jlc_resize_images import JLC_ResizeImages
 from .nodes.util_nodes.jlc_dynamic_multi_set_get import (
@@ -81,7 +80,6 @@ NODE_CLASS_MAPPINGS = {
     "JLC_ControlNetComposition": JLC_ControlNetComposition,
     "JLC_ControlNetOrchestrator": JLC_ControlNetOrchestrator,
     "JLC_ControlNetOrchestratorAdvanced": JLC_ControlNetOrchestratorAdvanced,
-    ## "JLC_ControlNetHintPrewarm": JLC_ControlNetHintPrewarm,
     "JLC_DynamicAuxPreprocessorWrapper": JLC_DynamicAuxPreprocessorWrapper,
 
     # LoRA Loaders
@@ -101,7 +99,7 @@ NODE_CLASS_MAPPINGS = {
     # Utility Nodes
     "JLC_SeedGenerator": JLC_SeedGenerator,
     "JLC_StageBoundaryVRAMCleanup": JLC_StageBoundaryVRAMCleanup,
-    "JLC_LoadAndResizeImage": JLC_LoadAndResizeImage,
+    "JLC_LoadAndResizeImage": JLC_LoadResizeEncodeImage,
     "JLC_ResizeImage": JLC_ResizeImage,
     "JLC_ResizeImages": JLC_ResizeImages,
     "JLC_DynamicMultiSet": JLC_DynamicMultiSet,
@@ -119,7 +117,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "JLC_ControlNetComposition": "\u2003JLC ControlNet Composition",
     "JLC_ControlNetOrchestrator": "\u2003JLC ControlNet Orchestrator",
     "JLC_ControlNetOrchestratorAdvanced": "\u2003JLC ControlNet Orchestrator (Advanced)",
-    ## "JLC_ControlNetHintPrewarm": "\u2003JLC ControlNet Hint Prewarm",
     "JLC_DynamicAuxPreprocessorWrapper": "\u2003JLC Dynamic Aux Preprocessor Wrapper",
 
     # LoRA Loaders
@@ -136,11 +133,11 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     # Utility Nodes
     "JLC_SeedGenerator": "\u2003JLC Seed Generator",
     "JLC_StageBoundaryVRAMCleanup": "\u2003JLC Stage Boundary VRAM Cleanup",
-    "JLC_LoadAndResizeImage": "\u2003JLC Load & Resize Image",
+    "JLC_LoadAndResizeImage": "\u2003JLC Load, Resize & Encode Image",
     "JLC_ResizeImage": "\u2003JLC Resize Image",
     "JLC_ResizeImages": "\u2003JLC Resize Multiple Images",
-    "JLC_DynamicMultiSet": "\u2003JLC Dynamic Multi Set",
-    "JLC_DynamicMultiGet": "\u2003JLC Dynamic Multi Get",
+    "JLC_DynamicMultiSet": "\u2003JLC Multi Set",
+    "JLC_DynamicMultiGet": "\u2003JLC Multi Get",
 }
 
 
