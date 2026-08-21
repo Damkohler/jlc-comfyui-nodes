@@ -316,24 +316,12 @@ function getRowWidget(node, rowId) {
     );
 }
 
-function syncNames(node) {
+function syncWidgetsFromRows(node) {
     for (const row of normalizeRows(node)) {
         const widget = getRowWidget(node, row.id);
         if (!widget) continue;
-
-        if (isJlcSet(node)) {
-            row.name = widget.value == null ? "" : String(widget.value).trim();
-            continue;
-        }
-
-        row.sourceKey =
-            widget.value == null ? "" : String(widget.value);
-        const descriptor = channelDescriptorByKey(
-            node.graph,
-            row.sourceKey,
-            false
-        );
-        if (descriptor) row.name = descriptor.name;
+        const value = isJlcGet(node) ? row.sourceKey || "" : row.name;
+        if (widget.value !== value) widget.value = value;
     }
 }
 
@@ -647,7 +635,7 @@ function setChannelDescriptors(graph, readyOnly = true) {
             }
 
             if (!isJlcSet(node)) continue;
-            syncNames(node);
+            syncWidgetsFromRows(node);
             normalizeRows(node).forEach((row, rowIndex) => {
                 if (!row.name) return;
                 const ready = node.inputs?.[rowIndex]?.link != null;
@@ -885,6 +873,7 @@ function rebuildWidgets(node) {
 
             widget[WIDGET_FLAG] = true;
             widget.__jlcRowId = row.id;
+            widget.value = isGet ? row.sourceKey || "" : row.name;
             widget.label = isGet
                 ? `Get ${index + 1} source`
                 : `Set ${index + 1} name`;
@@ -991,6 +980,7 @@ function rowCanBeRemoved(node, index) {
 
 function removeSocketRowAt(node, index, rowId) {
     const rows = normalizeRows(node);
+    if (rows.length <= MIN_ROWS) return false;
     if (rows[index]?.id !== rowId) return false;
 
     // Keep the row in place while LiteGraph removes the matching sockets.
@@ -1086,7 +1076,7 @@ function maintainRows(node) {
             transactionStarted = true;
         }
 
-        syncNames(node);
+        syncWidgetsFromRows(node);
         for (const rowId of sortedPendingRowIds(node)) {
             if (removeRowById(node, rowId)) structureChanged = true;
             node.__jlcPendingRowRemovals.delete(rowId);
@@ -1219,7 +1209,7 @@ function setGetValidationError(node, hasError) {
 }
 
 function resolveChannel(node, outputIndex, throwOnError) {
-    syncNames(node);
+    syncWidgetsFromRows(node);
     const row = normalizeRows(node)[outputIndex];
     const rowNumber = outputIndex + 1;
 
@@ -1542,7 +1532,7 @@ function installNode(node, kind) {
 
     node.onSerialize = function (serialized) {
         const result = original.onSerialize?.(serialized);
-        syncNames(this);
+        syncWidgetsFromRows(this);
 
         serialized.properties ??= {};
         serialized.properties[KIND_KEY] = kind;
