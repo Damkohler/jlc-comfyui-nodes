@@ -6,7 +6,7 @@
 
 const { app } = window.comfyAPI.app;
 
-const MAX_SLOTS = 10;
+const MAX_SLOTS = 5;
 const SLOT_COUNT_WIDGET = "slot_count";
 const UPDATE_BUTTON_LABEL = "Update Visible Slots";
 const NODE_NAMES = new Set([

@@ -137,7 +137,7 @@ MANIFEST = {
     ),
 }
 
-MAX_SLOTS = 8
+MAX_SLOTS = 5
 
 
 class JLC_ControlNetOrchestrator:
@@ -175,6 +175,13 @@ class JLC_ControlNetOrchestrator:
                 "positive": ("CONDITIONING",),
                 "negative": ("CONDITIONING",),
                 "vae": ("VAE",),
+                "slot_count": ("INT", {
+                    "default": 1,
+                    "min": 1,
+                    "max": MAX_SLOTS,
+                    "step": 1,
+                    "tooltip": "Number of ControlNet slots shown in the node.",
+                }),
             },
             "optional": optional,
         }

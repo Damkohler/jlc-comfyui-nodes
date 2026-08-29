@@ -5,7 +5,8 @@ This chapter covers the JLC utility-node family:
 - [JLC Seed Generator](#jlc-seed-generator)
 - [Future Seed Generator Direction: Randomize Replay](#future-seed-generator-direction-randomize-replay)
 - [JLC Resize Multiple Images](#jlc-resize-multiple-images)
-- [JLC Dynamic Multi Set/Get](#jlc-dynamic-multi-setget)
+- [JLC Multi Set/Get](#jlc-multi-setget)
+- [JLC Multi Reroute](#jlc-multi-reroute)
 - [JLC Boolean Logic (Frontend)](#jlc-boolean-logic-frontend)
 - [JLC Stage Boundary VRAM Cleanup](#jlc-stage-boundary-vram-cleanup)
 - [Choosing the Right Utility Node](#choosing-the-right-utility-node)
@@ -165,18 +166,53 @@ Use the individual outputs when each image should retain its calculated dimensio
 
 ---
 
-## JLC Dynamic Multi Set/Get
+## JLC Multi Set/Get
 
-**JLC Dynamic Multi Set** and **JLC Dynamic Multi Get** are production-ready virtual nodes for replacing large groups of individual wireless Set/Get nodes with one compact pair. Each row is an independently named channel and may carry a different ComfyUI socket type.
+**JLC Multi Set** and **JLC Multi Get** are production-ready virtual nodes for replacing large groups of individual wireless Set/Get nodes with one compact pair. Each row is an independently named channel and may carry a different ComfyUI socket type.
 
-- The nodes start with two rows and grow automatically when the final available row is connected, up to sixteen channels.
+- The nodes start with one visible row and grow automatically when the final available row is used, up to twenty-four channels.
 - Disconnecting a used row removes that row when safe and compacts the remaining rows while preserving their names, types, stable identities, and physical links.
 - Connected unnamed Set rows receive unique default names such as `channel_1`; Set names remain editable.
-- Get rows select from available connected channels. A Set rename propagates to Gets bound to that Set row.
-- Types are inferred dynamically, so a single pair can carry IMAGE, MASK, CONDITIONING, LATENT, VAE, INT, custom objects, and other ComfyUI types.
+- Get rows select from available connected channels. A Set rename propagates to Gets bound to that specific Set row.
+- Types are inferred dynamically, so a single pair can carry IMAGE, MASK, CONDITIONING, LATENT, VAE, MODEL, INT, custom objects, and other ComfyUI types.
 - Values resolve through ComfyUI's virtual graph-link interfaces before backend execution; no Python or JavaScript runtime value registry is used.
+- Subgraph input boundaries are delegated to ComfyUI's native executable-graph resolver rather than being treated as ordinary source nodes.
+
+Channel discovery follows lexical workflow scope. A **JLC Multi Get** can discover Sets in its own graph and in ancestor graphs. A Set that exists only inside a child subgraph is not published upward to a Get in the parent graph.
 
 JLC Multi Get can also select ordinary KJ `SetNode` channels when KJNodes is installed. Ordinary KJ `GetNode` does not currently resolve JLC Multi Set rows. The JLC pair works independently when KJNodes is absent.
+
+---
+
+## JLC Multi Reroute
+
+**JLC Multi Reroute** is a frontend virtual node for reducing visible wiring clutter without hiding connections behind wireless channels. It combines a stack of independent reroute nodes into one compact, automatically managed routing strip.
+
+Each row is a strict passthrough pair:
+
+```text
+input 1  →  output 1
+input 2  →  output 2
+input 3  →  output 3
+...
+```
+
+Key behavior:
+
+- The node starts with one input/output pair and grows automatically as the final available row is used, up to twenty-four pairs.
+- While below the twenty-four-row limit, the node keeps one trailing spare pair ready for the next connection.
+- Each row is independent and may resolve to a different ComfyUI socket type.
+- A row remains while either its input or output side is connected.
+- When both sides of a row become disconnected, that row may be removed and the surviving rows compact upward.
+- Stable internal row identities allow middle-row compaction without intentionally redirecting the surviving physical links.
+- One output may fan out to multiple downstream consumers just like a conventional reroute.
+- Socket and link colors follow ComfyUI's normal resolved-type colors, making mixed MODEL, VAE, CONDITIONING, IMAGE, LATENT, scalar, and custom-object lanes readable at a glance.
+- The node is virtual: it does not add a Python execution stage and does not copy tensors simply to provide the reroute.
+- Subgraph boundaries are resolved through ComfyUI's native virtual-link execution path.
+
+A row with downstream consumers but no valid upstream source is an invalid execution path. Prompt validation reports the error and the affected Multi Reroute receives ComfyUI's normal red error frame so the problem can be located on the canvas.
+
+Use **JLC Multi Reroute** when you want the workflow wiring to remain visible and traceable, but want repeated reroute nodes organized into one compact block. Use **JLC Multi Set/Get** when hiding long connections completely is more valuable than showing their physical path.
 
 ---
 
@@ -305,7 +341,8 @@ The broad options may cause later nodes to reload models, which can increase exe
 | Keep the visible seed stable while viewing the last seed actually used | JLC Seed Generator |
 | Prepare for future repeatable randomized seed trials | JLC Seed Generator, with planned randomize replay enhancement |
 | Resize up to five images with one shared policy while retaining separate outputs | JLC Resize Multiple Images |
-| Replace many individual wireless Set/Get nodes with compact mixed-type channels | JLC Dynamic Multi Set/Get |
+| Replace many individual wireless Set/Get nodes with compact mixed-type channels | JLC Multi Set/Get |
+| Keep wires visible while consolidating many independent reroute lanes into one compact block | JLC Multi Reroute |
 | Gate Switchboard-controlled groups from two frontend-readable Boolean inputs | JLC Boolean Logic (Frontend) |
 | Pass a latent across a deliberate stage boundary while trying to free selected model objects | JLC Stage Boundary VRAM Cleanup |
 | Force a guaranteed complete VRAM reset | Not guaranteed by these nodes; restart ComfyUI if a true reset is required |
@@ -327,6 +364,14 @@ The `seed` output is a small dictionary for compatibility with seed-style consum
 ### Randomize replay is not implemented yet
 
 The randomize replay section documents the planned direction. It is included here so the intent of the current seed-display design is clear, but the replay feature itself is not part of the current implementation.
+
+### Multi Set/Get and Multi Reroute are frontend virtual nodes
+
+These nodes organize graph connectivity; they are not tensor-processing stages. Their connected outputs are resolved to the real upstream execution path before the prompt reaches the Python backend.
+
+For Multi Set/Get, channel discovery is lexical: a Get can see matching Sets in its own graph and ancestor graph scopes. It does not search downward into child subgraphs.
+
+For Multi Reroute, each visible lane remains an ordinary physical graph path. ComfyUI's native virtual-link resolver is responsible for crossing subgraph input boundaries during executable-graph construction.
 
 ### Stage cleanup is not a magic memory eraser
 

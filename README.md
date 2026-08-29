@@ -17,9 +17,9 @@
 
 JLC ComfyUI Nodes is a custom-node collection built around Non-Recursive ControlNet Composition, a method introduced by this project to replace recursively nested multi-ControlNet evaluation with a flattened composition path whose execution cost scales approximately linearly with the number of applied ControlNets, rather than accumulating the severe repeated work, runtime growth, and memory pressure of native recursive chains.
 
-The collection also includes supporting tools for padded inpainting and outpainting, dynamic ControlNet auxiliary preprocessing, dynamic LoRA loading, stage-boundary VRAM cleanup, multi-image resizing, compact wireless connections, and frontend workflow control.
+The collection also includes supporting tools for padded inpainting and outpainting, dynamic ControlNet auxiliary preprocessing, dynamic LoRA loading, stage-boundary VRAM cleanup, multi-image resizing, compact wireless connections, compact multi-lane rerouting, and frontend workflow control.
 
-Release 2.1.0 expands the utility family with JLC Resize Multiple Images, the production-ready JLC Dynamic Multi Set/Get pair, and JLC Boolean Logic (Frontend), which replaces the earlier dedicated AND prototype.
+Release 2.1.0 expanded the utility family with JLC Resize Multiple Images, the production-ready JLC Multi Set/Get pair, and JLC Boolean Logic (Frontend), which replaced the earlier dedicated AND prototype. A subsequent minor update adds JLC Multi Reroute and hardens JLC Multi Set/Get virtual-link handling for ComfyUI subgraphs.
 
 Developed by J. L. Córdova, the project is especially focused on Flux-oriented image-generation pipelines, ControlNet-heavy workflows, multi-stage inference, LoRA experimentation, and advanced inpainting and outpainting.
 
@@ -138,14 +138,15 @@ These nodes predeclare up to ten LoRA slots and use frontend visibility controls
 
 ### 5. Utility Nodes
 
-Workflow-support nodes for seed discipline, stage-boundary memory hygiene, image resizing, compact wireless connections, and frontend Switchboard control.
+Workflow-support nodes for seed discipline, stage-boundary memory hygiene, image resizing, compact wireless connections, compact visible rerouting, and frontend Switchboard control.
 
 This family includes:
 
 - **JLC Seed Generator** — shared seed source that keeps the visible base seed stable while a frontend display reports the last seed actually used.
 - **JLC Stage Boundary VRAM Cleanup** — experimental latent-passthrough cleanup helper for advanced multi-stage workflows where selected heavy model objects should be unloaded before the next stage.
 - **JLC Resize Multiple Images** — applies one shared aspect-ratio-preserving resize policy to one through five images, with separate outputs and a convenience normalized batch output.
-- **JLC Dynamic Multi Set** and **JLC Dynamic Multi Get** — production-ready virtual nodes that replace groups of individual wireless Set/Get nodes with up to sixteen independently named, dynamically typed channels.
+- **JLC Multi Set** and **JLC Multi Get** — production-ready virtual nodes that replace groups of individual wireless Set/Get nodes with up to twenty-four independently named, dynamically typed channels. Rows grow and compact automatically while preserving stable channel identities and physical links.
+- **JLC Multi Reroute** — frontend virtual node providing one through twenty-four independent visible reroute lanes in a single compact node. Lanes grow automatically, compact when fully disconnected, preserve normal fan-out, and use ComfyUI's standard socket/link colors for their resolved data types.
 - **JLC Boolean Logic (Frontend)** — pure client-side two-input logic for ComfyUI-Switchboard controllers, supporting AND, OR, XOR, NAND, NOR, XNOR, and the two directional AND-NOT operations. It is a Switchboard companion, not a standalone backend Boolean node.
 
 [Read the Utility Nodes guide](docs/utility-nodes.md)

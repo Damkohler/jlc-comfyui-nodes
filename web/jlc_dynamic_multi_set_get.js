@@ -1159,16 +1159,22 @@ function candidateSource(candidate) {
     if (!link) return null;
 
     const sourceNode = nodeById(candidate.graph, link.origin_id);
-    if (!sourceNode) return null;
 
+    // Subgraph input boundaries are represented by a special IO endpoint rather
+    // than an ordinary node. That is still a valid connected source. In that
+    // case, preserve the live link and infer the type from the Set input / link
+    // metadata, while leaving the concrete upstream node resolution to
+    // ComfyUI's executable-graph compiler.
     return {
         link,
-        node: sourceNode,
+        node: sourceNode ?? null,
         slot: Number(link.origin_slot),
         type:
             (input.type && input.type !== "*" && input.type) ||
-            sourceNode.outputs?.[link.origin_slot]?.type ||
+            sourceNode?.outputs?.[link.origin_slot]?.type ||
+            link.type ||
             "*",
+        crossesSubgraphBoundary: link.originIsIoNode === true,
     };
 }
 
@@ -1433,10 +1439,27 @@ function sourceForSetRow(node, slot, throwOnError) {
 
     const link = linkById(node.graph, input.link);
     if (!link) return fail(`JLC Multi Set row ${slot + 1} has a missing source link.`);
-    const sourceNode = nodeById(node.graph, link.origin_id);
-    if (!sourceNode) return fail(`JLC Multi Set row ${slot + 1} has a missing source node.`);
 
-    return { link, node: sourceNode, slot: Number(link.origin_slot) };
+    const sourceNode = nodeById(node.graph, link.origin_id);
+
+    // A subgraph input boundary is a valid upstream source even though its
+    // origin is represented by a special IO endpoint instead of an ordinary
+    // node within the current graph.
+    if (!sourceNode && link.originIsIoNode !== true) {
+        return fail(`JLC Multi Set row ${slot + 1} has a missing source node.`);
+    }
+
+    return {
+        link,
+        node: sourceNode ?? null,
+        slot: Number(link.origin_slot),
+        type:
+            (input.type && input.type !== "*" && input.type) ||
+            sourceNode?.outputs?.[link.origin_slot]?.type ||
+            link.type ||
+            "*",
+        crossesSubgraphBoundary: link.originIsIoNode === true,
+    };
 }
 
 function installNode(node, kind) {
@@ -1584,11 +1607,6 @@ function installNode(node, kind) {
         node.getInputLink = function (slot) {
             return sourceForSetRow(this, slot, true).link;
         };
-
-        node.resolveVirtualOutput = function (slot) {
-            const source = sourceForSetRow(this, slot, true);
-            return { node: source.node, slot: source.slot };
-        };
     } else {
         node.getInputLink = function (slot) {
             const resolved = resolveChannel(this, slot, true);
@@ -1600,7 +1618,25 @@ function installNode(node, kind) {
             const resolved = resolveChannel(this, slot, true);
             setRowType(this, slot, resolved.source.type);
             if (resolved.candidate.graph === this.graph) return undefined;
-            return { node: resolved.source.node, slot: resolved.source.slot };
+
+            // Delegate cross-graph resolution to the selected Set node itself
+            // for JLC channels. This lets ComfyUI's native executable-graph
+            // resolver traverse any subgraph input boundaries attached to that
+            // Set, instead of trying to flatten those boundaries here.
+            //
+            // For non-JLC compatibility channels (for example KJ SetNode), keep
+            // the older direct-source shortcut when a concrete source node is
+            // available, and fall back to the candidate node otherwise.
+            if (resolved.candidate.kind !== "JLC" && resolved.source.node) {
+                return {
+                    node: resolved.source.node,
+                    slot: resolved.source.slot,
+                };
+            }
+            return {
+                node: resolved.candidate.node,
+                slot: resolved.candidate.slot,
+            };
         };
     }
 

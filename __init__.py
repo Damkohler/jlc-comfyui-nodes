@@ -69,6 +69,7 @@ from .nodes.util_nodes.jlc_dynamic_multi_set_get import (
      JLC_DynamicMultiGet,
      JLC_DynamicMultiSet,
  )
+from .nodes.util_nodes.jlc_dynamic_multi_reroute import JLC_DynamicMultiReroute
 
 
 NODE_CLASS_MAPPINGS = {
@@ -104,6 +105,7 @@ NODE_CLASS_MAPPINGS = {
     "JLC_ResizeImages": JLC_ResizeImages,
     "JLC_DynamicMultiSet": JLC_DynamicMultiSet,
     "JLC_DynamicMultiGet": JLC_DynamicMultiGet,
+    "JLC_DynamicMultiReroute": JLC_DynamicMultiReroute,
 }
 
 
@@ -138,6 +140,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "JLC_ResizeImages": "\u2003JLC Resize Multiple Images",
     "JLC_DynamicMultiSet": "\u2003JLC Multi Set",
     "JLC_DynamicMultiGet": "\u2003JLC Multi Get",
+    "JLC_DynamicMultiReroute": "\u2003JLC Multi Reroute",
 }
 
 
