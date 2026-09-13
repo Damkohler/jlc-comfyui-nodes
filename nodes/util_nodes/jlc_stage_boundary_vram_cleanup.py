@@ -15,24 +15,39 @@ JLC Stage Boundary VRAM Cleanup
     and VRAM usage in ways that depend on ComfyUI's current internal model
     management behavior.
 
-    Use only when the workflow is structured so that the upstream model objects
-    are no longer needed after the LATENT passthrough point. ComfyUI remains the
-    authority for model lifecycle management, and this node should be treated as
-    a best-effort helper rather than a guaranteed VRAM reset.
+    Use only when the workflow is structured so that the upstream heavy model
+    objects are no longer needed after the passthrough boundary. ComfyUI remains
+    the authority for model lifecycle management, and this node should be
+    treated as a best-effort helper rather than a guaranteed VRAM reset.
 
 - Purpose
-    A latent-triggered stage-boundary cleanup node for multi-stage workflows.
+    A type-agnostic stage-boundary cleanup passthrough node for multi-stage
+    workflows.
 
-    Typical use case:
-        Stage 1: load/use a large base model, inpaint model, or JLC-managed
-                 ControlNet stack to create a base latent.
-        Boundary: this node receives the latent, evicts selected heavy objects,
-                  clears allocator leftovers, and passes the latent onward.
-        Stage 2: load/use another model family for partial denoising.
+    Typical use cases:
+        • LATENT boundary:
+            Stage 1 creates a latent -> cleanup -> Stage 2 continues denoising.
 
-    This is intentionally not a generic CLIP/VAE cleanup node. The robust
-    targets are:
-        • a connected ComfyUI MODEL object and its clones/additional models
+        • STRING boundary:
+            A vision/caption stage finishes prompt generation -> cleanup -> a
+            different text encoder/model family consumes the prompt.
+
+        • IMAGE or other boundary:
+            Any ordinary ComfyUI value can act as the execution dependency when
+            it naturally marks the end of the upstream stage.
+
+    The passthrough value is not interpreted or modified. Its socket type is
+    resolved dynamically by the companion frontend extension and the exact same
+    Python object is returned after cleanup.
+
+    The first input is a targeted ComfyUI-managed model object. It accepts a
+    normal MODEL directly and also accepts wrapper objects such as CLIP or VAE
+    when they expose ComfyUI's standard ``patcher`` object. This makes the same
+    targeted unload path usable for diffusion models and text encoders without
+    falling back to the broad unload-all hammer.
+
+    Cleanup targets are:
+        • the connected MODEL / CLIP / VAE patcher and its clones/additional models
         • all currently loaded ComfyUI models, when explicitly requested
         • JLC-managed ControlNet resident cache entries
         • all JLC-managed resident cache entries, when explicitly requested
@@ -43,7 +58,13 @@ JLC Stage Boundary VRAM Cleanup
     calls ComfyUI's public-ish model_management helpers when available, and it
     uses the JLC shared model cache core for JLC-owned resident models.
 
-    The node is a passthrough: it returns the same LATENT it receives.
+    Both connection sockets are declared as wildcards so normal ComfyUI MODEL,
+    CLIP, VAE, STRING, LATENT, IMAGE, and custom types can connect. The frontend
+    resolves each socket to its live concrete datatype for normal coloring.
+
+    The physical input order is intentionally MODEL OBJECT first and passthrough
+    second. This revision prioritizes clean wiring over compatibility with the
+    earlier experimental latent-first layout.
 
 - Attribution & License
   - Concept and implementation by **J. L. Córdova** with development
@@ -65,16 +86,47 @@ MANIFEST = {
     "version": JLC_UTIL_NODES_VERSION,
     "author": "J. L. Córdova",
     "description": (
-        "Latent-triggered stage-boundary cleanup node for multi-stage ComfyUI "
-        "workflows. Can unload a connected MODEL through ComfyUI model "
-        "management, evict JLC ControlNet cache entries, optionally unload all "
-        "ComfyUI/JLC resident models, and clear CUDA allocator leftovers."
+        "Type-agnostic, list-aware stage-boundary cleanup passthrough for multi-stage "
+        "ComfyUI workflows. A wildcard target accepts MODEL/CLIP/VAE objects "
+        "that expose a ComfyUI patcher, while a second dynamic passthrough "
+        "socket carries STRING/LATENT/IMAGE or other values unchanged."
     ),
 }
 
 import gc
 import time
 from typing import Any, Optional
+
+
+class _AnyType(str):
+    """A ComfyUI wildcard that compares compatible with every socket type."""
+
+    def __ne__(self, _other: object) -> bool:
+        return False
+
+
+ANY_TYPE = _AnyType("*")
+
+
+def _first_list_item(value: Any, default: Any = None) -> Any:
+    """Return the first item of a ComfyUI list-mapped input, or default."""
+
+    if isinstance(value, list):
+        return value[0] if value else default
+    return value if value is not None else default
+
+
+def _as_bool(value: Any, default: bool = False) -> bool:
+    """Normalize ordinary or list-wrapped boolean-ish inputs."""
+
+    value = _first_list_item(value, default)
+    return bool(value)
+
+
+def _passthrough_payload(value: Any) -> Any:
+    """Keep passthrough payload exactly as received under list mapping."""
+
+    return value
 
 try:
     import comfy.model_management as model_management
@@ -122,27 +174,41 @@ def _warn(message: str) -> None:
 
 def _unwrap_model_patcher(model: Any) -> Optional[Any]:
     """
-    Return the most likely ComfyUI ModelPatcher object.
+    Return the ComfyUI ModelPatcher/CoreModelPatcher carried by a model object.
 
-    Standard ComfyUI MODEL sockets usually pass a ModelPatcher directly. This
-    wrapper also accepts a few dict-shaped variants used by some custom nodes.
+    Supported forms include:
+      • MODEL sockets, which normally already carry a patcher
+      • CLIP / VAE wrappers exposing ``.patcher``
+      • common dict wrappers used by custom nodes
+
+    Unknown objects return ``None`` rather than being handed blindly to ComfyUI
+    model-management internals.
     """
 
     if model is None:
         return None
 
+    # Direct MODEL / ModelPatcher path.
     if hasattr(model, "clone_base_uuid"):
         return model
 
-    if isinstance(model, dict):
-        for key in ("model", "model_patcher", "patcher", "unet"):
-            candidate = model.get(key)
-            if candidate is not None and hasattr(candidate, "clone_base_uuid"):
-                return candidate
+    # Standard ComfyUI CLIP and VAE wrappers expose their managed patcher here.
+    patcher = getattr(model, "patcher", None)
+    if patcher is not None and hasattr(patcher, "clone_base_uuid"):
+        return patcher
 
-    # Last-resort return. ComfyUI will reject it if it is not a valid patcher,
-    # and the caller will catch/log the failure.
-    return model
+    if isinstance(model, dict):
+        for key in ("patcher", "model_patcher", "model", "unet", "clip", "vae"):
+            candidate = model.get(key)
+            if candidate is None:
+                continue
+            if hasattr(candidate, "clone_base_uuid"):
+                return candidate
+            candidate_patcher = getattr(candidate, "patcher", None)
+            if candidate_patcher is not None and hasattr(candidate_patcher, "clone_base_uuid"):
+                return candidate_patcher
+
+    return None
 
 
 def _soft_empty_cache(*, verbose: bool = True) -> bool:
@@ -171,10 +237,10 @@ def _soft_empty_cache(*, verbose: bool = True) -> bool:
 
 
 def _unload_connected_model(model: Any, *, all_devices: bool, verbose: bool = True) -> bool:
-    """Unload one connected MODEL and its clones/additional models if possible."""
+    """Unload one connected MODEL/CLIP/VAE patcher and related models if possible."""
 
     if model is None:
-        _log("No MODEL input connected; targeted ComfyUI model unload skipped.", verbose=verbose)
+        _log("No model object connected; targeted ComfyUI unload skipped.", verbose=verbose)
         return False
 
     if model_management is None:
@@ -189,7 +255,7 @@ def _unload_connected_model(model: Any, *, all_devices: bool, verbose: bool = Tr
 
     target = _unwrap_model_patcher(model)
     if target is None:
-        _log("MODEL input resolved to None; targeted unload skipped.", verbose=verbose)
+        _log("Connected object does not expose a supported ComfyUI model patcher; targeted unload skipped.", verbose=verbose)
         return False
 
     try:
@@ -199,7 +265,7 @@ def _unload_connected_model(model: Any, *, all_devices: bool, verbose: bool = Tr
             all_devices=bool(all_devices),
         )
         _log(
-            "Requested targeted unload of connected MODEL, clones, and "
+            "Requested targeted unload of connected model object, clones, and "
             f"additional models; all_devices={bool(all_devices)}.",
             verbose=verbose,
         )
@@ -210,13 +276,13 @@ def _unload_connected_model(model: Any, *, all_devices: bool, verbose: bool = Tr
         # matching logic.
         try:
             unload_model_and_clones(target)
-            _log("Requested targeted unload of connected MODEL using fallback signature.", verbose=verbose)
+            _log("Requested targeted unload of connected model object using fallback signature.", verbose=verbose)
             return True
         except Exception as exc:
-            _warn(f"targeted ComfyUI MODEL unload failed with fallback signature: {exc}")
+            _warn(f"targeted ComfyUI model-object unload failed with fallback signature: {exc}")
             return False
     except Exception as exc:
-        _warn(f"targeted ComfyUI MODEL unload failed: {exc}")
+        _warn(f"targeted ComfyUI model-object unload failed: {exc}")
         return False
 
 
@@ -329,18 +395,29 @@ def _final_allocator_cleanup(*, safe: bool, verbose: bool = True) -> None:
 
 
 class JLC_StageBoundaryVRAMCleanup:
-    """Latent-triggered stage-boundary VRAM cleanup passthrough node."""
+    """Type-agnostic stage-boundary VRAM cleanup passthrough node."""
 
     FUNCTION = "cleanup"
     CATEGORY = "utils/VRAM"
-    RETURN_TYPES = ("LATENT",)
-    RETURN_NAMES = ("latent",)
+    RETURN_TYPES = (ANY_TYPE,)
+    RETURN_NAMES = ("passthrough",)
+    INPUT_IS_LIST = True
+    OUTPUT_IS_LIST = (True,)
+    DESCRIPTION = (
+        "Runs best-effort VRAM/model cleanup at an explicit workflow stage "
+        "boundary, then returns the incoming passthrough value unchanged. "
+        "When upstream provides a list (for example one prompt per tile), "
+        "cleanup executes once for the whole list rather than once per item. "
+        "The first socket accepts a MODEL, CLIP, VAE, or compatible wrapper "
+        "that exposes a ComfyUI patcher; the second socket dynamically follows "
+        "STRING, LATENT, IMAGE, or other ComfyUI types."
+    )
 
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "latent": ("LATENT",),
+                "passthrough": (ANY_TYPE,),
                 "unload_connected_model": ("BOOLEAN", {"default": True}),
                 "evict_jlc_controlnet_cache": ("BOOLEAN", {"default": False}),
                 "evict_all_jlc_model_cache": ("BOOLEAN", {"default": False}),
@@ -351,19 +428,21 @@ class JLC_StageBoundaryVRAMCleanup:
                 "verbose": ("BOOLEAN", {"default": True}),
             },
             "optional": {
-                "model": ("MODEL",),
+                # Wildcard by design: ComfyUI MODEL, CLIP and VAE wrappers use
+                # different socket types but can all expose a managed patcher.
+                "model": (ANY_TYPE,),
             },
         }
 
     @classmethod
     def IS_CHANGED(cls, **kwargs):
         # This node has intentional side effects, so force execution whenever it
-        # sits on an active graph path instead of relying only on cached latents.
+        # sits on an active graph path instead of relying only on cached inputs.
         return time.time()
 
     def cleanup(
         self,
-        latent,
+        passthrough,
         unload_connected_model: bool = True,
         evict_jlc_controlnet_cache: bool = False,
         evict_all_jlc_model_cache: bool = False,
@@ -374,31 +453,55 @@ class JLC_StageBoundaryVRAMCleanup:
         verbose: bool = True,
         model: Any = None,
     ):
+        # INPUT_IS_LIST=True means ComfyUI supplies every input as a list.
+        # For the passthrough payload, that is exactly what we want: a gathered
+        # list of items can act as one stage-boundary token and should be
+        # returned unchanged so downstream scalar nodes can fan back out.
+        passthrough_value = _passthrough_payload(passthrough)
+        verbose_flag = _as_bool(verbose, True)
         started = time.time()
-        _log("Stage-boundary cleanup triggered by LATENT input.", verbose=verbose)
+
+        item_count = len(passthrough_value) if isinstance(passthrough_value, list) else 1
+        _log(
+            f"Stage-boundary cleanup triggered by passthrough input; item_count={item_count}.",
+            verbose=verbose_flag,
+        )
+
+        model_value = _first_list_item(model, None)
+        unload_connected_model_flag = _as_bool(unload_connected_model, True)
+        evict_jlc_controlnet_cache_flag = _as_bool(evict_jlc_controlnet_cache, False)
+        evict_all_jlc_model_cache_flag = _as_bool(evict_all_jlc_model_cache, False)
+        unload_all_comfy_models_flag = _as_bool(unload_all_comfy_models, False)
+        clear_cuda_allocator_flag = _as_bool(clear_cuda_allocator, True)
+        safe_cleanup_flag = _as_bool(safe_cleanup, True)
+        all_devices_flag = _as_bool(all_devices, False)
 
         # ComfyUI model residency cleanup.
-        if bool(unload_all_comfy_models):
-            _unload_all_comfy_models(verbose=verbose)
-        elif bool(unload_connected_model):
-            _unload_connected_model(model, all_devices=bool(all_devices), verbose=verbose)
+        if unload_all_comfy_models_flag:
+            _unload_all_comfy_models(verbose=verbose_flag)
+        elif unload_connected_model_flag:
+            _unload_connected_model(model_value, all_devices=all_devices_flag, verbose=verbose_flag)
 
         # JLC-owned resident cache cleanup. If the all-cache hammer is selected,
         # do not separately evict the ControlNet family first.
-        if bool(evict_all_jlc_model_cache):
-            _evict_all_jlc_cache(safe=bool(safe_cleanup), verbose=verbose)
-        elif bool(evict_jlc_controlnet_cache):
-            _evict_jlc_controlnet_cache(safe=bool(safe_cleanup), verbose=verbose)
+        if evict_all_jlc_model_cache_flag:
+            _evict_all_jlc_cache(safe=safe_cleanup_flag, verbose=verbose_flag)
+        elif evict_jlc_controlnet_cache_flag:
+            _evict_jlc_controlnet_cache(safe=safe_cleanup_flag, verbose=verbose_flag)
 
-        if bool(clear_cuda_allocator):
-            _final_allocator_cleanup(safe=bool(safe_cleanup), verbose=verbose)
+        if clear_cuda_allocator_flag:
+            _final_allocator_cleanup(safe=safe_cleanup_flag, verbose=verbose_flag)
         else:
             gc.collect()
-            _log("Allocator cleanup disabled; Python gc.collect() only.", verbose=verbose)
+            _log("Allocator cleanup disabled; Python gc.collect() only.", verbose=verbose_flag)
 
         elapsed = time.time() - started
-        _log(f"Cleanup complete in {elapsed:.3f}s. Passing LATENT through.", verbose=verbose)
-        return (latent,)
+        _log(
+            f"Cleanup complete in {elapsed:.3f}s. Passing value through unchanged.",
+            verbose=verbose_flag,
+        )
+        return (passthrough_value,)
+
 
 
 NODE_CLASS_MAPPINGS = {

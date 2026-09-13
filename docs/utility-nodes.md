@@ -3,7 +3,7 @@
 This chapter covers the JLC utility-node family:
 
 - [JLC Seed Generator](#jlc-seed-generator)
-- [Future Seed Generator Direction: Randomize Replay](#future-seed-generator-direction-randomize-replay)
+- [Randomize Record and Replay](#randomize-record-and-replay)
 - [JLC Resize Multiple Images](#jlc-resize-multiple-images)
 - [JLC Multi Set/Get](#jlc-multi-setget)
 - [JLC Multi Reroute](#jlc-multi-reroute)
@@ -18,22 +18,24 @@ These nodes are not image-generation algorithms by themselves. They are workflow
 
 ## JLC Seed Generator
 
-**JLC Seed Generator** is a shared seed source for workflows where multiple samplers or multiple inference stages should use the same seed during one full prompt execution.
+**JLC Seed Generator** is a shared seed source for workflows where multiple samplers, captioning stages, or other seed-aware nodes should receive one coordinated seed value during a prompt execution.
 
 Typical use case:
 
 ```text
 JLC Seed Generator
-    ├─ seed_int → KSampler seed, stage 1
-    └─ seed_int → KSampler seed, stage 2
+    ├─ seed_int → seeded stage 1
+    ├─ seed_int → seeded stage 2
+    └─ seed_int → seeded stage 3
 ```
 
 This is useful when:
 
-- one seed should feed multiple KSamplers;
-- stage 1 creates a latent;
-- stage 2 partially denoises the same latent;
-- you want parameter trials without losing track of the starting seed.
+- one seed should feed multiple samplers or inference stages;
+- a multi-stage workflow must keep seed ownership in one visible place;
+- you want deterministic increment/decrement trials without losing the original starting seed;
+- you want to explore random seeds and then replay exactly the same random sequence after changing another parameter;
+- a downstream node explicitly supports `-1` as an intentionally unseeded sentinel.
 
 ### Outputs
 
@@ -48,107 +50,173 @@ In most ordinary ComfyUI seed sockets, `seed_int` is the convenient output.
 
 ---
 
-## Stable base seed and last-used display
+## Seed modes and stable base seed
 
-The node uses ComfyUI's native `control_after_generate` seed behavior, but changes the user-facing display behavior.
-
-A normal seed widget often mutates the visible seed after a queue submission. For example:
-
-```text
-seed = 1
-control after generate = increment
-queue count = 4
-```
-
-The visible widget may advance as queued prompts are prepared.
-
-**JLC Seed Generator** instead keeps the visible seed input as the user's stable base seed, while the companion frontend display reports the seed actually used by the executed prompt.
-
-Conceptually:
-
-```text
-visible base seed: 1
-
-queued prompt 1 uses seed 1
-queued prompt 2 uses seed 2
-queued prompt 3 uses seed 3
-queued prompt 4 uses seed 4
-
-visible seed input is restored to 1
-display reports the last seed actually used
-```
-
-The intent is to make parameter trials easier. You can queue several variations, abort, adjust parameters, and still see the original seed you started from.
-
-### Display spacer
-
-The node includes a harmless STRING widget row reserved for the frontend seed panel.
-
-If the frontend script is available, it turns that row into a display panel. If the frontend script is unavailable, it remains an inert separator-like text field and is ignored by the backend.
-
----
-
-## Future Seed Generator Direction: Randomize Replay
-
-The current seed behavior works cleanly for:
+For ordinary nonnegative seeds, the node supports the familiar control modes:
 
 ```text
 fixed
 increment
 decrement
+randomize
 ```
 
-Those modes are deterministic from the visible base seed.
+The visible **seed** widget is treated as the user's stable base seed. After queue submission, the frontend restores that visible value instead of leaving the widget advanced to whatever seed happened to be used most recently.
 
-The intended future improvement is an optional replay mechanism for `randomize` mode.
-
-### Current randomize limitation
-
-In `randomize` mode, ComfyUI may generate a different sequence of random seeds for a queued run. The JLC Seed Generator can display the seed actually used, but it does not yet replay an entire randomized sequence.
-
-### Planned direction
-
-The intended future feature is optional and off by default.
-
-During a queued randomized trial, the node/frontend sequence could record the actual seeds used:
+For example:
 
 ```text
-randomize run, count 4:
+visible base seed: 1
+control after generate: increment
+
+run 1 uses seed 1
+run 2 uses seed 2
+run 3 uses seed 3
+run 4 uses seed 4
+
+visible seed remains 1
+```
+
+The status panel reports the seed used by execution while the editable seed widget remains the starting point for the trial.
+
+`fixed`, `increment`, and `decrement` remain deterministic from the visible base seed.
+
+For `randomize`, the JLC frontend assigns the actual nonnegative random seed **before prompt serialization**. This is intentional: it allows the visible base seed to remain stable while still making the submitted random value explicit enough to record and replay reliably.
+
+---
+
+## Intentionally unseeded sentinel: `-1`
+
+`-1` is a first-class JLC sentinel meaning:
+
+```text
+intentionally unseeded
+```
+
+When the visible seed is `-1`:
+
+- both outputs preserve `-1`;
+- the frontend locks seed mutation;
+- `fixed`, `increment`, `decrement`, and `randomize` do not alter it;
+- every queued prompt continues to receive `-1`;
+- randomize record/replay is inactive.
+
+The JLC Seed Generator does **not** translate `-1` into a hidden random number. It passes the sentinel through unchanged.
+
+This is only useful when the downstream consumer defines what `-1` means. A node or engine that requires an ordinary nonnegative seed may not accept the sentinel.
+
+---
+
+## Randomize Record and Replay
+
+Randomize record/replay is implemented and applies only when:
+
+```text
+control after generate = randomize
+```
+
+The **randomize_replay** selector provides three modes:
+
+```text
+off
+record
+replay
+```
+
+### `off`
+
+Each run receives a fresh JLC-generated nonnegative random seed.
+
+The visible base seed remains unchanged, while the status panel shows the seed actually used.
+
+### `record`
+
+Switching into **record** starts a fresh sequence.
+
+For every randomized run, the node:
+
+1. generates the seed before prompt serialization;
+2. submits that exact seed to the workflow;
+3. immediately appends the same value to the recorded sequence;
+4. updates the status panel with the number of captured seeds.
+
+Recording works across both queued submissions and separate presses of **Run**.
+
+Example:
+
+```text
+record:
   seed A
   seed B
   seed C
   seed D
 ```
 
-On a rerun where the visible input seed has not changed, an optional replay mode could reuse the stored sequence:
+The recorded sequence is stored in the node's workflow properties so it remains associated with that node/workflow.
+
+### `replay`
+
+Switching into **replay** resets the replay cursor to the beginning of the stored sequence.
+
+Subsequent executions reuse the recorded values in the same order:
 
 ```text
-replay run, count 4:
+replay:
   seed A
   seed B
   seed C
   seed D
 ```
 
-Possible future controls might look like:
+The replay cursor advances across separate presses of **Run** as well as queued prompts.
+
+If execution continues past the end of the stored sequence, replay cycles back to the beginning. For exact A/B comparisons, queue or run the same number of executions that were originally recorded.
+
+### Empty replay protection
+
+If **replay** is selected but no sequence has been recorded, the node does **not** silently fall back to fresh random seeds.
+
+Instead, it holds the visible base seed and reports that replay is empty. This keeps a mistaken replay request deterministic and obvious.
+
+### Why record/replay only applies to randomize
+
+`fixed`, `increment`, and `decrement` already define deterministic sequences from the visible base seed, so recording them would add no information.
+
+Randomized trials are different: once a useful random sequence has been found, replay lets you change another variable—CFG, steps, denoise strength, LoRA weight, model settings, or another workflow parameter—and compare results against exactly the same sequence of seeds.
+
+Conceptually:
 
 ```text
-randomize_replay: off / record / replay
+Trial A:
+  randomize + record
+  seeds A, B, C, D
+
+change one parameter
+
+Trial B:
+  randomize + replay
+  seeds A, B, C, D
 ```
 
-or:
+This makes randomized parameter studies repeatable without giving up the convenience of random exploration.
 
-```text
-repeat_last_random_sequence: true / false
-```
+---
 
-### Why this matters
+## Status panel
 
-The long-term goal is repeatable randomized parameter trials.
+The frontend companion converts the reserved display row into a compact status panel.
 
-That means a user could explore randomized seeds across a batch, then rerun the same randomized sequence after changing another parameter, without relying on or reverse-engineering ComfyUI's internal random-number behavior.
+Depending on the active state, it can show:
 
-This planned feature should apply only to `randomize` mode. It is unnecessary for `fixed`, `increment`, and `decrement`.
+- the last seed used;
+- `UNSEEDED` for the `-1` sentinel;
+- `RECORD` with the number of captured seeds;
+- `REPLAY` with the current sequence position;
+- `REPLAY EMPTY` when replay is requested without a stored sequence.
+
+The panel is informational only. Seed values still leave the node through the `seed` and `seed_int` outputs.
+
+If the frontend companion is unavailable, the reserved row remains a harmless inert widget and is ignored by the backend.
 
 ---
 
@@ -239,28 +307,46 @@ This node is never submitted to the Python backend. It is not intended as a stan
 
 ## JLC Stage Boundary VRAM Cleanup
 
-**JLC Stage Boundary VRAM Cleanup** is an experimental latent-passthrough cleanup node for advanced multi-stage workflows.
+**JLC Stage Boundary VRAM Cleanup** is an experimental, type-agnostic stage-boundary cleanup passthrough for advanced multi-stage workflows.
 
-It is intended for workflows where one stage uses heavy model objects to produce a latent, then a later stage should run with a different model family or reduced resident-memory pressure.
+It is intended for workflows where one stage has finished using heavy resident model objects and a later stage should proceed with lower VRAM pressure, a different model family, or a different type of intermediate value.
 
-Typical use case:
+Typical uses include:
 
 ```text
-Stage 1:
-    large base model, inpaint model, or ControlNet stack
+LATENT boundary:
+    Stage 1 sampling
     ↓
     latent
-
-Boundary:
+    ↓
     JLC Stage Boundary VRAM Cleanup
     ↓
-    same latent passed through
-
-Stage 2:
-    different model family or partial denoising pass
+    Stage 2 sampling
 ```
 
-The node returns the same `LATENT` it receives. Its purpose is side-effect cleanup at a deliberate stage boundary.
+```text
+STRING boundary:
+    vision / caption model
+    ↓
+    prompt text
+    ↓
+    JLC Stage Boundary VRAM Cleanup
+    ↓
+    downstream text encoder or generation stage
+```
+
+```text
+IMAGE or other boundary:
+    any ordinary ComfyUI value
+    ↓
+    JLC Stage Boundary VRAM Cleanup
+    ↓
+    downstream stage
+```
+
+The passthrough value is not interpreted or modified. The frontend resolves the wildcard passthrough socket to the live connected datatype, so normal ComfyUI values such as `STRING`, `LATENT`, `IMAGE`, and custom types can act as the stage-boundary dependency.
+
+The node is also **list-aware**. When ComfyUI supplies a gathered list—such as one prompt per tile—the cleanup executes once for the whole gathered stage boundary and the list is returned unchanged rather than triggering cleanup separately for every item.
 
 ### Experimental warning
 
@@ -268,68 +354,101 @@ This node is experimental.
 
 It may affect model residency, reload behavior, execution time, and VRAM usage in ways that depend on ComfyUI's current model-management internals.
 
-ComfyUI remains the authority for model lifecycle management. This node should be treated as a best-effort helper, not as a guaranteed VRAM reset.
+ComfyUI remains the authority for model lifecycle management. This node should be treated as a best-effort cleanup helper, not as a guaranteed VRAM reset.
 
-Use it only when the graph is structured so that the upstream model objects are no longer needed after the latent passthrough point.
+Use it only when the upstream heavy model objects are genuinely no longer needed after the boundary.
+
+---
+
+## Targeted model-object cleanup
+
+The optional **model** socket is also type-agnostic so the same cleanup path can target more than a conventional diffusion `MODEL`.
+
+The node can recognize:
+
+- a normal ComfyUI `MODEL` / model patcher directly;
+- `CLIP` wrappers that expose ComfyUI's managed `patcher`;
+- `VAE` wrappers that expose a managed `patcher`;
+- compatible wrapper/dictionary objects that expose an identifiable ComfyUI model patcher.
+
+When **unload_connected_model** is enabled, the node asks ComfyUI to unload the resolved target patcher together with its clones and additional models when the current ComfyUI API supports that operation.
+
+This targeted path is useful when only one completed stage should be released and a broad unload-all operation would be unnecessarily destructive.
+
+If the connected object does not expose a supported managed patcher, the targeted unload is skipped rather than blindly passing an unknown object into ComfyUI's model-management internals.
 
 ---
 
 ## Cleanup targets
 
-The robust targets are:
+The available cleanup paths are:
 
-- a connected ComfyUI `MODEL` object and its clones/additional models;
+- the connected `MODEL`, `CLIP`, `VAE`, or compatible managed patcher, including clones/additional models where supported;
 - all currently loaded ComfyUI models, when explicitly requested;
 - JLC-managed ControlNet resident cache entries;
 - all JLC-managed resident cache entries, when explicitly requested;
-- final best-effort Python/CUDA allocator cleanup.
+- final best-effort Python / backend-aware / CUDA allocator cleanup.
 
-It is intentionally not a generic CLIP/VAE cleanup node.
+The broad cleanup options are intentionally separate from the targeted path so the narrowest useful cleanup can be selected.
 
 ### Main controls
 
 | Input | Purpose |
 |---|---|
-| `latent` | Passthrough latent that triggers the cleanup point. |
-| `unload_connected_model` | Try to unload the connected optional MODEL and its clones/additional models. |
+| `passthrough` | Required wildcard stage-boundary value. Passed through unchanged and may be `STRING`, `LATENT`, `IMAGE`, or another ComfyUI type. |
+| `unload_connected_model` | Try to unload the optional connected managed model object, its clones, and additional models. |
 | `evict_jlc_controlnet_cache` | Evict JLC-managed ControlNet cache entries. |
 | `evict_all_jlc_model_cache` | Evict all JLC-managed resident cache entries. |
 | `unload_all_comfy_models` | Ask ComfyUI to unload all resident models. This is the broadest ComfyUI-side cleanup option. |
-| `clear_cuda_allocator` | Run final best-effort allocator cleanup. |
-| `safe_cleanup` | Use the safer cleanup path when supported by JLC cache helpers. |
-| `all_devices` | Apply connected-model unload across devices when supported by ComfyUI. |
-| `verbose` | Print cleanup status messages. |
-| `model` | Optional connected MODEL to target for unload. |
+| `clear_cuda_allocator` | Run final best-effort allocator cleanup after model/cache cleanup. |
+| `safe_cleanup` | Use the safer cleanup path when supported by the JLC cache helpers. |
+| `all_devices` | Apply targeted connected-model unload across devices when supported by ComfyUI. |
+| `verbose` | Print cleanup actions and timing information. |
+| `model` | Optional wildcard cleanup target. Accepts `MODEL`, `CLIP`, `VAE`, or a compatible wrapper exposing a ComfyUI-managed patcher. |
 
 ### Execution behavior
 
-The node intentionally forces execution when it is on an active graph path, because cleanup is a side effect. It should not be optimized away simply because the latent is cached.
+The node intentionally forces execution whenever it lies on an active graph path because cleanup is a side effect and should not be optimized away solely because the passthrough value is cached.
+
+With list-mapped inputs, the node gathers the incoming passthrough items, performs cleanup once, and returns the gathered value unchanged so downstream list handling can continue normally.
+
+Cleanup order is intentionally narrow-to-broad:
+
+1. targeted connected-model unload, unless **unload_all_comfy_models** is selected;
+2. JLC ControlNet cache eviction, unless **evict_all_jlc_model_cache** is selected;
+3. optional allocator cleanup.
+
+If an "all" option is selected for a cleanup family, the narrower operation from the same family is skipped rather than performed redundantly first.
 
 ### Practical guidance
 
 Use the narrowest cleanup that solves the problem.
 
-Start with:
+A common targeted boundary is:
 
 ```text
 unload_connected_model = true
 clear_cuda_allocator = true
 ```
 
-Then add broader options only when needed:
+Connect the completed stage's `MODEL`, `CLIP`, or `VAE`-compatible object to the optional **model** socket, and use the natural stage result—latent, image, string, or another value—as the passthrough dependency.
+
+If the workflow also uses JLC-managed ControlNet residency, add:
 
 ```text
 evict_jlc_controlnet_cache = true
 ```
 
-or, for more aggressive cleanup:
+For a much more aggressive boundary:
 
 ```text
 unload_all_comfy_models = true
 evict_all_jlc_model_cache = true
 ```
 
-The broad options may cause later nodes to reload models, which can increase execution time.
+The broad options may force later stages to reload models and therefore increase execution time substantially.
+
+This node cannot guarantee a complete VRAM reset. Active references elsewhere in the graph, ComfyUI internals, backend allocator behavior, and third-party model ownership can all affect what remains resident.
 
 ---
 
@@ -339,12 +458,13 @@ The broad options may cause later nodes to reload models, which can increase exe
 |---|---|
 | Feed the same seed into multiple samplers or stages | JLC Seed Generator |
 | Keep the visible seed stable while viewing the last seed actually used | JLC Seed Generator |
-| Prepare for future repeatable randomized seed trials | JLC Seed Generator, with planned randomize replay enhancement |
+| Pass an explicit `-1` intentionally-unseeded sentinel to a compatible downstream consumer | JLC Seed Generator |
+| Record and replay repeatable randomized seed trials | JLC Seed Generator |
 | Resize up to five images with one shared policy while retaining separate outputs | JLC Resize Multiple Images |
 | Replace many individual wireless Set/Get nodes with compact mixed-type channels | JLC Multi Set/Get |
 | Keep wires visible while consolidating many independent reroute lanes into one compact block | JLC Multi Reroute |
 | Gate Switchboard-controlled groups from two frontend-readable Boolean inputs | JLC Boolean Logic (Frontend) |
-| Pass a latent across a deliberate stage boundary while trying to free selected model objects | JLC Stage Boundary VRAM Cleanup |
+| Pass a latent, image, string, or other value across a deliberate stage boundary while trying to free selected managed model objects | JLC Stage Boundary VRAM Cleanup |
 | Force a guaranteed complete VRAM reset | Not guaranteed by these nodes; restart ComfyUI if a true reset is required |
 
 ---
@@ -361,9 +481,11 @@ No new showcase workflows are included for these utility additions. Consult work
 
 The `seed` output is a small dictionary for compatibility with seed-style consumers. The `seed_int` output is a plain integer and is usually the easiest connection for standard sampler seed fields.
 
-### Randomize replay is not implemented yet
+### Randomize replay is frontend-assisted
 
-The randomize replay section documents the planned direction. It is included here so the intent of the current seed-display design is clear, but the replay feature itself is not part of the current implementation.
+Randomize record/replay is implemented by the JLC frontend companion because the seed must be chosen or substituted before ComfyUI serializes the prompt.
+
+The Python node remains the explicit seed source and preserves the `-1` sentinel contract. The frontend owns the randomize sequence state, stores recorded seeds in node workflow properties, and restores the visible base seed after submission.
 
 ### Multi Set/Get and Multi Reroute are frontend virtual nodes
 
@@ -375,11 +497,15 @@ For Multi Reroute, each visible lane remains an ordinary physical graph path. Co
 
 ### Stage cleanup is not a magic memory eraser
 
-The VRAM cleanup node can request targeted unloads and allocator cleanup, but model residency remains dependent on ComfyUI internals, active graph references, backend behavior, and selected options.
+The VRAM cleanup node can request targeted `MODEL` / `CLIP` / `VAE`-compatible patcher unloads, broader ComfyUI or JLC cache eviction, and allocator cleanup, but model residency still depends on ComfyUI internals, active graph references, backend behavior, third-party ownership, and selected options.
 
 ### Avoid using cleanup too early
 
-Place the cleanup node only after the upstream model objects are truly no longer needed. If the graph still needs those objects later, ComfyUI may reload them or the workflow may behave unexpectedly.
+Place the cleanup node only after the upstream model objects are truly no longer needed. The passthrough socket may carry any ordinary ComfyUI value, but that value should represent a real execution boundary. If the graph still needs the targeted model object later, ComfyUI may reload it or the workflow may behave unexpectedly.
+
+### List-aware stage boundaries
+
+The cleanup node uses ComfyUI list mapping deliberately. A gathered list can act as one stage-boundary token, allowing cleanup to run once for the whole upstream stage rather than once per list item.
 
 ### Verbose mode
 

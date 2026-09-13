@@ -8,52 +8,49 @@ JLC Seed Generator
 
 - Purpose
     A shared seed source for workflows where multiple samplers or multiple
-    inference stages should use the same seed for one full prompt execution.
+    inference stages should use the same seed contract for one full prompt
+    execution.
 
-    Typical use case:
-        • one seed node feeds two or more KSampler seed inputs
-        • stage 1 creates a latent
-        • a stage-boundary cleanup node frees selected heavy model objects
-        • stage 2 partially denoises the same latent using the same seed
+- Seed Contract
+    ``-1`` is a first-class sentinel meaning **intentionally unseeded**.
+    It is passed through unchanged. The JLC frontend companion locks native
+    control-after-generate mutation while the sentinel is active, so queued
+    prompts continue to receive ``-1`` rather than incrementing, decrementing,
+    or randomizing it.
 
-- Reverse Seed Display Semantics
-    This node intentionally presents queued seeds in the opposite user-facing
-    sequence from normal ComfyUI seed widgets.
+    Nonnegative values are ordinary numeric seeds in the range
+    ``0 .. 2^63 - 1``.
 
-    Normal seed widgets usually mutate the visible seed after queue submission:
-        seed = 1, control after generate = increment, queue count = 4
-        visible widget advances toward 5 as queued prompts are prepared
+- Stable Base Seed Display
+    For ordinary nonnegative seeds, ComfyUI's native control-after-generate
+    modes remain available (fixed / increment / decrement / randomize), while
+    the frontend companion restores the visible seed widget to the user's base
+    seed after queue submission. The status panel reports the seed actually
+    executed by the backend.
 
-    JLC Seed Generator instead preserves the user's visible base seed while the
-    companion JavaScript display reports the seed actually used by each executed
-    prompt:
-        seed = 1, control after generate = increment, queue count = 4
-        queued prompt 1 uses seed 1
-        queued prompt 2 uses seed 2
-        queued prompt 3 uses seed 3
-        queued prompt 4 uses seed 4
-        visible seed widget is restored to 1
-        display shows the last seed used as each prompt executes
+- Randomize Replay
+    The ``randomize_replay`` control is a frontend-assisted feature:
 
-    The intent is to make parameter trials easier when seed consistency matters.
-    A user can launch several queued variations, abort or adjust parameters, and
-    still see the original base seed in the input widget without needing to
-    remember or manually restore it.
+      off
+          Normal ComfyUI randomize behavior.
 
-- Display Spacer
-    The final STRING widget is intentionally a harmless display-reservation row.
-    The frontend companion turns it into a non-editing visual panel that shows
-    the last seed used. If the frontend script is unavailable, it simply appears
-    as an inert separator-like text field and is ignored by the backend.
+      record
+          Run normal randomization while recording the actual executed seed
+          sequence reported by the backend.
 
-- Design Notes
-    This node uses ComfyUI's native seed widget control-after-generate behavior
-    so the queued prompt data receives the correct per-run seed values. The
-    frontend companion then restores the visible widget to the pre-queue base
-    seed and displays the backend-reported seed actually used.
+      replay
+          Reuse the most recently recorded random sequence in queue order.
 
-    The node returns both a small SEED-style dictionary and a plain INT. The
-    INT output is convenient for ComfyUI seed inputs that expect integer seeds.
+    Record/replay is intentionally meaningful only when ComfyUI's native
+    control-after-generate mode is ``randomize``. The replay sequence is stored
+    in the node's workflow properties by the frontend companion.
+
+- Outputs
+    ``seed``
+        Small SEED-style dictionary: ``{"seed": value}``.
+
+    ``seed_int``
+        Plain integer seed, including ``-1`` when intentionally unseeded.
 
 - Attribution & License
   - Concept and implementation by **J. L. Córdova** with development
@@ -67,26 +64,28 @@ JLC Seed Generator
 """
 
 from __future__ import annotations
+
 from typing import Any
 
 from ...jlc_custom_nodes_versions import JLC_UTIL_NODES_VERSION
 
 MAX_SEED = 0x7FFFFFFFFFFFFFFF  # 2^63 - 1
+UNSEEDED = -1
+REPLAY_MODES = ("off", "record", "replay")
 
 MANIFEST = {
     "name": "JLC Seed Generator",
     "version": JLC_UTIL_NODES_VERSION,
     "author": "J. L. Córdova",
     "description": (
-        "Shared seed source for multi-sampler and multi-stage ComfyUI workflows. "
-        "Uses ComfyUI's native seed queue behavior while the frontend restores "
-        "the visible base seed and displays the last seed actually used."
+        "Shared seed source with a first-class -1 unseeded sentinel, stable "
+        "base-seed display, and frontend-assisted randomize record/replay."
     ),
 }
 
 
 class JLC_SeedGenerator:
-    """Shared seed source with frontend-restored stable base seed display."""
+    """Shared seed source with explicit unseeded and replay-aware semantics."""
 
     FUNCTION = "generator"
     CATEGORY = "utils/seed"
@@ -106,28 +105,41 @@ class JLC_SeedGenerator:
                     "INT",
                     {
                         "default": 0,
-                        "min": 0,
+                        "min": UNSEEDED,
                         "max": MAX_SEED,
                         "control_after_generate": True,
                         "tooltip": (
-                            "Stable base seed input. During queued runs, ComfyUI may use "
-                            "incremented, decremented, or randomized seeds, but this visible "
-                            "input is restored to the value you entered. The display row below "
-                            "shows the last seed actually used."
+                            "Base seed. Use -1 for intentionally unseeded execution. "
+                            "When -1 is active, the JLC frontend locks native seed "
+                            "mutation so every queued prompt receives -1. For ordinary "
+                            "nonnegative seeds, fixed/increment/decrement/randomize work "
+                            "normally while this visible widget is restored to the base value."
                         ),
                     },
                 ),
-                # Reserved display row for the frontend seed panel. Keep this
-                # as a real widget, not hidden, so LiteGraph accounts for its
-                # vertical space and does not easily clip the custom display.
+                "randomize_replay": (
+                    REPLAY_MODES,
+                    {
+                        "default": "off",
+                        "tooltip": (
+                            "Optional companion for native Randomize mode. Off uses normal "
+                            "ComfyUI randomization. Record stores the actual executed random "
+                            "seed sequence. Replay reuses the stored sequence. Ignored for "
+                            "fixed/increment/decrement and while seed = -1."
+                        ),
+                    },
+                ),
+                # Reserved display row for the frontend status panel. Keep this
+                # as a real widget so LiteGraph reserves vertical space for the
+                # custom-drawn panel. The backend intentionally ignores it.
                 "spacer": (
                     "STRING",
                     {
-                        "default": "──────── seed display ────────",
+                        "default": "──────── JLC seed status ────────",
                         "multiline": False,
                         "tooltip": (
-                            "This row shows the last seed actually used; the seed input above "
-                            "remains the starting seed."
+                            "Frontend status panel: executed seed, unseeded sentinel state, "
+                            "and randomize record/replay status."
                         ),
                     },
                 ),
@@ -136,21 +148,50 @@ class JLC_SeedGenerator:
 
     @staticmethod
     def _coerce_seed(seed: Any) -> int:
+        """Normalize an input while preserving -1 as the sole negative sentinel."""
         if seed is None:
-            seed = 0
+            return 0
 
         try:
             value = int(seed)
-        except Exception:
-            value = 0
+        except (TypeError, ValueError, OverflowError):
+            return 0
 
+        if value == UNSEEDED:
+            return UNSEEDED
+
+        # Preserve the legacy behavior for invalid negative values: ordinary
+        # seeds are clamped to the valid nonnegative range, but -1 is handled
+        # explicitly above rather than being created by a generic clamp.
         return max(0, min(value, MAX_SEED))
 
-    def generator(self, seed=0, spacer=None):
+    @classmethod
+    def IS_CHANGED(cls, seed=0, randomize_replay="off", spacer=None):
+        """
+        Treat the -1 sentinel as volatile.
+
+        An intentionally unseeded downstream consumer may generate a different
+        result even when every serialized workflow input is otherwise identical.
+        Returning NaN prevents ComfyUI from treating the seed source as a stable
+        cached value in that case. Ordinary numeric seeds retain normal caching.
+        """
+        current_seed = cls._coerce_seed(seed)
+        if current_seed == UNSEEDED:
+            return float("nan")
+        return current_seed
+
+    def generator(self, seed=0, randomize_replay="off", spacer=None):
         current_seed = self._coerce_seed(seed)
         self.last_seed = current_seed
 
+        # The replay selector is frontend behavior. Normalize it here only so a
+        # malformed API/workflow value cannot leak surprising state into UI data.
+        replay_mode = str(randomize_replay).strip().lower()
+        if replay_mode not in REPLAY_MODES:
+            replay_mode = "off"
+
         seed_text = str(current_seed)
+        state_text = "unseeded" if current_seed == UNSEEDED else "seeded"
 
         return {
             "result": (
@@ -158,10 +199,13 @@ class JLC_SeedGenerator:
                 current_seed,
             ),
             # ComfyUI forwards these values to node.onExecuted(message).
-            # Use list values for compatibility with common frontend examples.
+            # String values preserve the exact decimal representation of large
+            # integer seeds across the frontend boundary.
             "ui": {
                 "jlc_seed": [seed_text],
                 "seed": [seed_text],
+                "jlc_seed_state": [state_text],
+                "jlc_replay_mode": [replay_mode],
             },
         }
 

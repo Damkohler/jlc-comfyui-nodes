@@ -142,8 +142,8 @@ Workflow-support nodes for seed discipline, stage-boundary memory hygiene, image
 
 This family includes:
 
-- **JLC Seed Generator** — shared seed source that keeps the visible base seed stable while a frontend display reports the last seed actually used.
-- **JLC Stage Boundary VRAM Cleanup** — experimental latent-passthrough cleanup helper for advanced multi-stage workflows where selected heavy model objects should be unloaded before the next stage.
+- **JLC Seed Generator** — shared seed source that keeps the visible base seed stable, supports an explicit `-1` intentionally-unseeded sentinel for compatible consumers, and can record and replay randomized seed sequences for repeatable parameter trials.
+- **JLC Stage Boundary VRAM Cleanup** — experimental, type-agnostic and list-aware stage-boundary cleanup passthrough. It can target a connected ComfyUI `MODEL`, `CLIP`, or `VAE`-compatible managed patcher (including clones/additional models), optionally unload all ComfyUI models or JLC-managed resident caches, run allocator cleanup, and pass `STRING`, `LATENT`, `IMAGE`, or other ComfyUI values through unchanged.
 - **JLC Resize Multiple Images** — applies one shared aspect-ratio-preserving resize policy to one through five images, with separate outputs and a convenience normalized batch output.
 - **JLC Multi Set** and **JLC Multi Get** — production-ready virtual nodes that replace groups of individual wireless Set/Get nodes with up to twenty-four independently named, dynamically typed channels. Rows grow and compact automatically while preserving stable channel identities and physical links.
 - **JLC Multi Reroute** — frontend virtual node providing one through twenty-four independent visible reroute lanes in a single compact node. Lanes grow automatically, compact when fully disconnected, preserve normal fan-out, and use ComfyUI's standard socket/link colors for their resolved data types.
