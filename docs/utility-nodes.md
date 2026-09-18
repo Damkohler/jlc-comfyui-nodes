@@ -9,6 +9,7 @@ This chapter covers the JLC utility-node family:
 - [JLC Multi Reroute](#jlc-multi-reroute)
 - [JLC Boolean Logic (Frontend)](#jlc-boolean-logic-frontend)
 - [JLC Stage Boundary VRAM Cleanup](#jlc-stage-boundary-vram-cleanup)
+- [JLC GPU Cooldown](#jlc-gpu-cooldown)
 - [Choosing the Right Utility Node](#choosing-the-right-utility-node)
 - [Example Workflows](#example-workflows)
 
@@ -452,6 +453,81 @@ This node cannot guarantee a complete VRAM reset. Active references elsewhere in
 
 ---
 
+## JLC GPU Cooldown
+
+**JLC GPU Cooldown** is a generic, interruptible stage pause in `utils/VRAM`.
+It returns the exact passthrough object it receives, preserving object identity
+and gathered-list structure. It does not clone or detach tensors, unload models,
+clear VRAM, synchronize CUDA, or transfer data between devices.
+
+The node is list-aware and accepts `IMAGE`, `LATENT`, `MODEL`, `STRING`, and
+other connected ComfyUI types. One gathered list produces one cooldown wait and
+is returned with the same list and item identities. Multiple cooldown nodes may
+be used in one workflow to pause different dependency boundaries.
+
+### Modes and defaults
+
+| Input | Default | Behavior |
+|---|---:|---|
+| `mode` | `combined` | `timer`, `temperature`, or both conditions together. |
+| `minimum_wait_seconds` | `30` | Required elapsed time in timer and combined modes. |
+| `resume_temperature_c` | `70` | Maximum accepted reading in temperature and combined modes. |
+| `stable_seconds` | `5` | Time that successful readings must remain at or below the target. |
+| `poll_interval_seconds` | `2` | Delay between telemetry checks. |
+| `gpu_index` | `0` | Physical NVML GPU index used by temperature modes. |
+
+Timer mode releases after the minimum wait. Temperature mode ignores the timer
+and releases only after the GPU has remained at or below the target for the
+stability interval. Combined mode requires both conditions. Elapsed and stable
+intervals use a monotonic clock, so system-clock changes do not alter the wait.
+
+These defaults are workflow settings, not hardware safety limits.
+
+### Telemetry, selection, and cancellation
+
+Temperature and combined modes require `nvidia-ml-py`, imported as `pynvml`,
+and an NVIDIA GPU visible to NVML. Timer mode does not initialize NVML and works
+without that dependency. `gpu_index` selects the physical NVML index; it is not
+a CUDA index remapped by `CUDA_VISIBLE_DEVICES`. On a multi-NVIDIA system,
+select the physical GPU doing the relevant work.
+
+If the selected index does not exist, the node fails with a configuration error
+instead of waiting forever. If NVML initialization, handle access, or a
+temperature reading otherwise fails, the node resets the stability interval and
+**holds execution while retrying**. It does not convert sensor failure into
+successful completion and has no automatic timeout release. ComfyUI
+Cancel/Interrupt is checked during the wait, including telemetry retry delays.
+Clear separately queued prompts as well if they should not run after the
+interrupted prompt.
+
+### Wiring and caching
+
+The connected data path defines the pause boundary. For example:
+
+```text
+VAE Decode → JLC GPU Cooldown → Save Image
+```
+
+Here saving occurs after the cooldown releases. A model connection by itself
+does not prove that a sampler using the model has completed, and a cooldown on
+one branch does not automatically synchronize unrelated branches. A terminal
+cooldown running in parallel with Save Image likewise does not guarantee that
+saving finishes first.
+
+The node deliberately reports itself changed on each prompt so that a required
+cooldown is not skipped by ComfyUI's cache. Consequently, consumers downstream
+of its passthrough output are also treated as dirty and may rerun even when
+their other inputs are unchanged. Put the node only on the path that genuinely
+needs the pause.
+
+The frontend displays live progress without serializing that transient status.
+The outputs are `passthrough`, `waited_seconds`, and `status`. GPU memory may
+remain allocated throughout the pause, and background GPU activity is outside
+the node's control. Cooldown can reduce between-stage heat accumulation; it is
+not a guarantee against driver failures, hardware freezes, or other instability.
+
+---
+
 ## Choosing the Right Utility Node
 
 | Need | Recommended Node |
@@ -465,6 +541,7 @@ This node cannot guarantee a complete VRAM reset. Active references elsewhere in
 | Keep wires visible while consolidating many independent reroute lanes into one compact block | JLC Multi Reroute |
 | Gate Switchboard-controlled groups from two frontend-readable Boolean inputs | JLC Boolean Logic (Frontend) |
 | Pass a latent, image, string, or other value across a deliberate stage boundary while trying to free selected managed model objects | JLC Stage Boundary VRAM Cleanup |
+| Pause one wired dependency path by time, NVIDIA temperature, or both without changing its value or freeing memory | JLC GPU Cooldown |
 | Force a guaranteed complete VRAM reset | Not guaranteed by these nodes; restart ComfyUI if a true reset is required |
 
 ---

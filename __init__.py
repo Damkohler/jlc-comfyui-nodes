@@ -60,6 +60,7 @@ from .nodes.lora_loader_nodes.jlc_lora_loader_legacy_dynamic_wrappers import (
 )
 
 # Utility Nodes
+from .nodes.util_nodes.jlc_gpu_cooldown import JLC_GPUCooldown
 from .nodes.util_nodes.jlc_seed_generator import JLC_SeedGenerator
 from .nodes.util_nodes.jlc_stage_boundary_vram_cleanup import JLC_StageBoundaryVRAMCleanup
 from .nodes.util_nodes.jlc_load_resize_encode_image import JLC_LoadResizeEncodeImage
@@ -98,6 +99,7 @@ NODE_CLASS_MAPPINGS = {
     **legacy_lora_class_mappings,
 
     # Utility Nodes
+    "JLC_GPUCooldown": JLC_GPUCooldown,
     "JLC_SeedGenerator": JLC_SeedGenerator,
     "JLC_StageBoundaryVRAMCleanup": JLC_StageBoundaryVRAMCleanup,
     "JLC_LoadAndResizeImage": JLC_LoadResizeEncodeImage,
@@ -133,6 +135,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     **legacy_lora_display_name_mappings,
 
     # Utility Nodes
+    "JLC_GPUCooldown": "\u2003JLC GPU Cooldown",
     "JLC_SeedGenerator": "\u2003JLC Seed Generator",
     "JLC_StageBoundaryVRAMCleanup": "\u2003JLC Stage Boundary VRAM Cleanup",
     "JLC_LoadAndResizeImage": "\u2003JLC Load, Resize & Encode Image",

@@ -17,13 +17,32 @@
 
 JLC ComfyUI Nodes is a custom-node collection built around Non-Recursive ControlNet Composition, a method introduced by this project to replace recursively nested multi-ControlNet evaluation with a flattened composition path whose execution cost scales approximately linearly with the number of applied ControlNets, rather than accumulating the severe repeated work, runtime growth, and memory pressure of native recursive chains.
 
-The collection also includes supporting tools for padded inpainting and outpainting, dynamic ControlNet auxiliary preprocessing, dynamic LoRA loading, stage-boundary VRAM cleanup, multi-image resizing, compact wireless connections, compact multi-lane rerouting, and frontend workflow control.
+The collection also includes supporting tools for padded inpainting and outpainting, dynamic ControlNet auxiliary preprocessing, dynamic LoRA loading, stage-boundary VRAM cleanup, GPU cooldown gates, multi-image resizing, compact wireless connections, compact multi-lane rerouting, and frontend workflow control.
 
 Release 2.1.0 expanded the utility family with JLC Resize Multiple Images, the production-ready JLC Multi Set/Get pair, and JLC Boolean Logic (Frontend), which replaced the earlier dedicated AND prototype. A subsequent minor update adds JLC Multi Reroute and hardens JLC Multi Set/Get virtual-link handling for ComfyUI subgraphs.
 
 Developed by J. L. Córdova, the project is especially focused on Flux-oriented image-generation pipelines, ControlNet-heavy workflows, multi-stage inference, LoRA experimentation, and advanced inpainting and outpainting.
 
 The current ControlNet Composition, Orchestrator, Orchestrator Advanced, Apply Advanced, shared composition core, and dynamic slot-visibility paths were audited and validated against ComfyUI commit 2a610155 from June 22, 2026, with frontend package 1.45.19. Validation included demanding Flux workflows with multiple LoRAs, Union ControlNet models, repeated ControlNet use, and as many as four ControlNet slots. See the detailed ControlNet guide for the full compatibility baseline, benchmark context, and runtime recommendations.
+
+---
+
+## Release 2.3.0
+
+Release 2.3.0 adds **JLC GPU Cooldown**, an interruptible generic passthrough
+gate with timer, NVIDIA temperature, and combined modes. It pauses only the
+dependency path wired through it and performs no implicit VRAM cleanup, model
+unloading, tensor copying, or device transfers. Multiple gates can define
+separate boundaries in one workflow.
+
+This release also packages the Seed Generator work added to `main` after the
+2.2.0 tag: `-1` passes through unchanged as an intentionally unseeded sentinel,
+and the frontend keeps fixed/increment/decrement/randomize plus random-seed
+record/replay behavior from mutating that sentinel. The downstream consumer
+must itself support `-1`.
+
+See the [utility-node guide](docs/utility-nodes.md) and
+[2.3.0 changelog](CHANGELOG.md#230---2026-09-18).
 
 ---
 
@@ -138,11 +157,12 @@ These nodes predeclare up to ten LoRA slots and use frontend visibility controls
 
 ### 5. Utility Nodes
 
-Workflow-support nodes for seed discipline, stage-boundary memory hygiene, image resizing, compact wireless connections, compact visible rerouting, and frontend Switchboard control.
+Workflow-support nodes for seed discipline, stage-boundary memory hygiene, deliberate cooldown pauses, image resizing, compact wireless connections, compact visible rerouting, and frontend Switchboard control.
 
 This family includes:
 
 - **JLC Seed Generator** — shared seed source that keeps the visible base seed stable, supports an explicit `-1` intentionally-unseeded sentinel for compatible consumers, and can record and replay randomized seed sequences for repeatable parameter trials.
+- **JLC GPU Cooldown** — generic, list-aware passthrough gate with timer, NVIDIA temperature, and combined modes. It pauses the connected dependency boundary without freeing memory or modifying the value.
 - **JLC Stage Boundary VRAM Cleanup** — experimental, type-agnostic and list-aware stage-boundary cleanup passthrough. It can target a connected ComfyUI `MODEL`, `CLIP`, or `VAE`-compatible managed patcher (including clones/additional models), optionally unload all ComfyUI models or JLC-managed resident caches, run allocator cleanup, and pass `STRING`, `LATENT`, `IMAGE`, or other ComfyUI values through unchanged.
 - **JLC Resize Multiple Images** — applies one shared aspect-ratio-preserving resize policy to one through five images, with separate outputs and a convenience normalized batch output.
 - **JLC Multi Set** and **JLC Multi Get** — production-ready virtual nodes that replace groups of individual wireless Set/Get nodes with up to twenty-four independently named, dynamically typed channels. Rows grow and compact automatically while preserving stable channel identities and physical links.
@@ -185,6 +205,17 @@ Install it through ComfyUI Manager, or follow the upstream installation instruct
 [https://github.com/Fannovel16/comfyui_controlnet_aux](https://github.com/Fannovel16/comfyui_controlnet_aux)
 
 Some upstream preprocessors may download or load large auxiliary models the first time they are used.
+
+### Optional dependency: GPU temperature cooldown
+
+The **JLC GPU Cooldown** timer mode has no telemetry dependency. Temperature
+and combined modes require `nvidia-ml-py`, which is imported as `pynvml`, and
+an NVIDIA GPU visible to NVML. Install it in ComfyUI's Python environment if it
+is not already supplied by another custom node:
+
+```bash
+python -m pip install nvidia-ml-py
+```
 
 ---
 
