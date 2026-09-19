@@ -34,6 +34,15 @@
  *   - Row IDs remain stable while their visible slot numbers are free to change.
  *   - One trailing spare row is retained whenever capacity remains.
  *
+ * Widget Propagation:
+ *   - Compatible downstream widget metadata propagates independently per lane.
+ *   - Hidden value proxies allow native subgraph input widget promotion.
+ *   - Numeric ranges and combo choices intersect across fan-out. Conflicting
+ *     widget contracts retain typed sockets and all compatible physical links.
+ *   - Runtime metadata is rebuilt after load; no RGThree dependency is added.
+ *   - Explicit lane positions keep modern rendering, legacy rendering and
+ *     connection dragging aligned before and after widget promotion.
+ *
  * Type / Color Behavior:
  *   - Every row resolves its own ComfyUI datatype independently.
  *   - An upstream concrete type is authoritative when present; otherwise a
@@ -200,6 +209,362 @@ function graphCandidates(graph) {
     return result;
 }
 
+// Widget metadata is derived from live destinations, never serialized. Keep
+// the real input link intact: this is a UI bridge, not an execution resolver.
+const laneWidgets = new WeakMap();
+const widgetGraphs = new WeakMap();
+const proxyWidgetFlag = Symbol("JLC lane widget");
+
+function nodeByIdEverywhere(graph, id) {
+    // Link endpoint IDs belong to their graph; IDs can repeat in subgraphs.
+    return nodeById(graph, id);
+}
+
+function widgetAPI() {
+    return globalThis.comfyAPI?.widgetInputs;
+}
+
+function copyConfig(value) {
+    if (Array.isArray(value)) return value.map(copyConfig);
+    if (value && Object.prototype.toString.call(value) === "[object Object]") {
+        return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, copyConfig(v)]));
+    }
+    return value;
+}
+
+function sameConfig(a, b) {
+    if (a === b) return true;
+    if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
+    const keys = Object.keys(a);
+    return keys.length === Object.keys(b).length &&
+        keys.every((key) => Object.hasOwn(b, key) && sameConfig(a[key], b[key]));
+}
+
+function validWidgetConfig(config) {
+    return Array.isArray(config) && config.length >= 1 &&
+        (Array.isArray(config[0]) || ["INT", "FLOAT", "STRING", "BOOLEAN", "COMBO"].includes(config[0]));
+}
+
+function readWidgetConfig(node, input) {
+    try {
+        const config = widgetAPI()?.getWidgetConfig?.(input);
+        if (validWidgetConfig(config)) return copyConfig(config);
+    } catch { /* Older frontends may not expose the compatibility API. */ }
+    // RGThree's symbol-backed config approach, including inherited metadata
+    // on promoted subgraph slots. Only invoke known config getters.
+    for (let descriptor = input.widget; descriptor; descriptor = Object.getPrototypeOf(descriptor)) {
+        for (const symbol of Object.getOwnPropertySymbols(descriptor)) {
+            if (!/config/i.test(symbol.description ?? "")) continue;
+            try {
+                const entry = descriptor[symbol];
+                const config = typeof entry === "function" ? entry.call(input.widget) : entry;
+                if (validWidgetConfig(config)) return copyConfig(config);
+            } catch { /* A stale extension descriptor is not a usable widget. */ }
+        }
+    }
+    const name = input.widget?.name ?? input.name;
+    const data = node.constructor?.nodeData ?? node.nodeData;
+    const config = data?.input?.required?.[name] ?? data?.input?.optional?.[name];
+    return validWidgetConfig(config) ? copyConfig(config) : null;
+}
+
+function rerouteOutputForInput(node, index) {
+    if (node[INSTALL_FLAG] || isRerouteClass(node.comfyClass, node.type)) return index;
+    const type = node.type ?? node.constructor?.type;
+    if ((type === "Reroute" || type === "Reroute (rgthree)") && index === 0 &&
+        node.inputs?.length === 1 && node.outputs?.length === 1) return 0;
+    return null;
+}
+
+function collectLaneWidgets(node, index, active = new Map(), found = new Map()) {
+    let slots = active.get(node);
+    if (slots?.has(index)) return null; // A cycle cannot promise a widget contract.
+    if (!slots) active.set(node, slots = new Set());
+    slots.add(index);
+    try {
+        for (const id of node.outputs?.[index]?.links ?? []) {
+            const link = linkById(node.graph, id);
+            if (!link) return null;
+            const target = nodeById(node.graph, link.target_id);
+            // Subgraph IO endpoints are not ordinary nodes. Do not accidentally
+            // bind to a same-numbered node in the root graph.
+            if (!target) return null;
+            const input = target.inputs?.[link.target_slot];
+            if (!input) return null;
+            const next = rerouteOutputForInput(target, link.target_slot);
+            if (next != null) {
+                if (!collectLaneWidgets(target, next, active, found)) return null;
+                continue;
+            }
+            if (!input.widget) continue; // Ordinary typed consumers are allowed.
+            const widget = target.getWidgetFromSlot?.(input) ??
+                target.widgets?.find((item) => item.name === input.widget.name);
+            const config = readWidgetConfig(target, input);
+            if (!widget || !config) return null;
+            const type = widget.origType ?? widget.type;
+            if (!["number", "slider", "combo", "text", "toggle"].includes(type)) return null;
+            found.set(widget, { node: target, input, widget, config, type });
+        }
+        return found;
+    } finally {
+        slots.delete(index);
+    }
+}
+
+function canonicalWidgetConfig(config) {
+    return Array.isArray(config[0])
+        ? ["COMBO", { ...copyConfig(config[1] ?? {}), options: [...config[0]] }]
+        : [config[0], copyConfig(config[1] ?? {})];
+}
+
+function mergeLaneConfigs(targets) {
+    let merged = canonicalWidgetConfig(targets[0].config);
+    const ignored = new Set(["default", "tooltip", "defaultInput", "forceInput"]);
+    for (const target of targets.slice(1)) {
+        const [type, options] = canonicalWidgetConfig(target.config);
+        if (type !== merged[0] || target.type !== targets[0].type) return null;
+        const current = merged[1];
+        const keys = new Set([...Object.keys(current), ...Object.keys(options)]);
+        for (const key of keys) {
+            if (ignored.has(key)) continue;
+            if ((type === "INT" || type === "FLOAT") && (key === "min" || key === "max")) continue;
+            if (type === "COMBO" && key === "options") continue;
+            // Different steps/precision/custom constraints deliberately fall
+            // back to a pin; guessing a common step can create invalid values.
+            if (!sameConfig(current[key], options[key])) return null;
+        }
+        if (type === "INT" || type === "FLOAT") {
+            const min = Math.max(current.min ?? -Infinity, options.min ?? -Infinity);
+            const max = Math.min(current.max ?? Infinity, options.max ?? Infinity);
+            if (min > max || (type === "INT" && Math.ceil(min) > Math.floor(max))) return null;
+            if (Number.isFinite(min)) current.min = min;
+            if (Number.isFinite(max)) current.max = max;
+        } else if (type === "COMBO") {
+            if (!Array.isArray(current.options) || !Array.isArray(options.options)) return null;
+            current.options = current.options.filter((v) => options.options.includes(v));
+            if (!current.options.length) return null;
+        }
+    }
+    const options = merged[1];
+    if (typeof options.default === "number") {
+        options.default = Math.max(options.min ?? -Infinity, Math.min(options.max ?? Infinity, options.default));
+    } else if (merged[0] === "COMBO" && !options.options?.includes(options.default)) {
+        options.default = options.options?.[0];
+    }
+    return merged;
+}
+
+function writeLaneValue(state, value, notify, args = []) {
+    for (const target of state.targets) {
+        target.widget.value = value;
+        if (notify) target.widget.callback?.call(target.widget, value, app.canvas, target.node, ...args);
+        target.node.setDirtyCanvas?.(true, true);
+    }
+}
+
+function makeLaneProxy(state, rowId) {
+    return {
+        [proxyWidgetFlag]: true,
+        name: `jlc_lane_${rowId}`,
+        type: state.targets[0].type,
+        hidden: true,
+        options: {},
+        get value() { return state.targets[0]?.widget.value ?? state.config?.[1]?.default; },
+        set value(value) { writeLaneValue(state, value, false); },
+        callback(value, _canvas, _node, ...args) { writeLaneValue(state, value, true, args); },
+        computeSize() { return [0, -4]; },
+        draw() {},
+    };
+}
+
+function notifyLaneBoundary(node, input, proxy) {
+    const graph = node.graph;
+    const link = linkById(graph, input.link);
+    if (!link) return;
+    const boundary = graph.inputNode;
+    if (boundary && String(boundary.id) === String(link.origin_id)) {
+        const slot = boundary.slots?.[link.origin_slot];
+        if (!slot?.events?.dispatch) return;
+        if (proxy) {
+            slot._widget = proxy;
+            slot.events.dispatch("input-connected", { input, widget: proxy, node });
+        } else {
+            slot._widget = slot.getConnectedWidgets?.()[0];
+            slot.events.dispatch("input-disconnected", { input: slot });
+        }
+    } else {
+        const source = nodeById(graph, link.origin_id);
+        // Never disconnect a Primitive because metadata became incompatible.
+        if (proxy && source?.type === "PrimitiveNode") source.recreateWidget?.();
+    }
+}
+
+function clearLaneWidgets(node) {
+    for (const state of laneWidgets.get(node)?.values() ?? []) {
+        if (state.input?.widget?.name === state.proxy.name) delete state.input.widget;
+    }
+    node.widgets = (node.widgets ?? []).filter((widget) => !widget[proxyWidgetFlag]);
+    laneWidgets.delete(node);
+}
+
+function refreshLaneWidgets(node) {
+    if (!node.graph || node.__jlcRefreshingWidgets || node.__jlcStructuralUpdate) return;
+    node.__jlcRefreshingWidgets = true;
+    try {
+        let states = laneWidgets.get(node);
+        if (!states) laneWidgets.set(node, states = new Map());
+        const rows = normalizeRows(node);
+        const liveIds = new Set(rows.map((row) => row.id));
+        for (const [id, state] of states) {
+            if (liveIds.has(id)) continue;
+            node.widgets = (node.widgets ?? []).filter((widget) => widget !== state.proxy);
+            states.delete(id);
+        }
+        rows.forEach((row, index) => {
+            const input = node.inputs?.[index];
+            if (!input) return;
+            const targets = [...(collectLaneWidgets(node, index)?.values() ?? [])];
+            const config = targets.length ? mergeLaneConfigs(targets) : null;
+            const old = states.get(row.id);
+            if (!config || !typesOverlap(input.type, config[0])) {
+                if (old) {
+                    delete input.widget;
+                    node.widgets = (node.widgets ?? []).filter((widget) => widget !== old.proxy);
+                    states.delete(row.id);
+                    notifyLaneBoundary(node, input, null);
+                }
+                return;
+            }
+            const options = { ...copyConfig(targets[0].widget.options ?? {}) };
+            for (const key of ["min", "max", "precision"]) {
+                if (config[1][key] != null) options[key] = config[1][key];
+            }
+            if (config[0] === "COMBO") options.values = [...config[1].options];
+            const changed = !old || old.input !== input || old.link !== input.link ||
+                !sameConfig(old.config, config) || !sameConfig(old.proxy.options, options) ||
+                old.targets.length !== targets.length ||
+                old.targets.some((target, i) => target.widget !== targets[i].widget);
+            const state = old ?? { targets, config };
+            state.targets = targets;
+            state.config = config;
+            state.input = input;
+            state.link = input.link;
+            state.proxy ??= makeLaneProxy(state, row.id);
+            state.proxy.type = targets[0].type;
+            state.proxy.options = options;
+            state.proxy.y = rowCenterY(index) - (globalThis.LiteGraph?.NODE_SLOT_HEIGHT ?? 20) / 2;
+            // Retain the original descriptor's exact config symbols for builds
+            // without comfyAPI. Never mutate the downstream slot or config.
+            const descriptor = Object.create(targets[0].input.widget);
+            descriptor.name = state.proxy.name;
+            for (let source = targets[0].input.widget; source; source = Object.getPrototypeOf(source)) {
+                for (const symbol of Object.getOwnPropertySymbols(source)) {
+                    if (/config/i.test(symbol.description ?? "")) {
+                        Object.defineProperty(descriptor, symbol, {
+                            value: typeof source[symbol] === "function" ? () => state.config : state.config,
+                            configurable: true,
+                            writable: true,
+                        });
+                    }
+                }
+            }
+            // A detached slot avoids setWidgetConfig's graph mutation side effects.
+            try {
+                widgetAPI()?.setWidgetConfig?.({ widget: descriptor }, config);
+            } catch {
+                // Exact destination symbols above remain usable when the
+                // deprecated compatibility setter is absent or has changed.
+            }
+            input.widget = descriptor;
+            node.widgets ??= [];
+            if (!node.widgets.includes(state.proxy)) node.widgets.push(state.proxy);
+            states.set(row.id, state);
+            if (changed) notifyLaneBoundary(node, input, state.proxy);
+        });
+    } finally {
+        node.__jlcRefreshingWidgets = false;
+        syncLaneLayout(node, true);
+    }
+}
+
+function scheduleGraphWidgets(graph) {
+    const state = widgetGraphs.get(graph);
+    if (!state || state.timer != null) return;
+    state.timer = setTimeout(() => {
+        state.timer = null;
+        if (app.configuringGraph) return;
+        for (const node of state.nodes) {
+            if (node.graph === graph) refreshLaneWidgets(node);
+        }
+    }, 0);
+}
+
+function trackWidgetGraph(node) {
+    const graph = node.graph;
+    if (!graph) return;
+    if (node.__jlcWidgetGraph !== graph) untrackWidgetGraph(node);
+    let state = widgetGraphs.get(graph);
+    if (!state) {
+        state = { nodes: new Set(), timer: null, listener: () => scheduleGraphWidgets(graph) };
+        widgetGraphs.set(graph, state);
+        graph.events?.addEventListener?.("node:slot-links:changed", state.listener);
+    }
+    state.nodes.add(node);
+    node.__jlcWidgetGraph = graph;
+    scheduleGraphWidgets(graph);
+}
+
+function untrackWidgetGraph(node) {
+    const graph = node.__jlcWidgetGraph;
+    const state = widgetGraphs.get(graph);
+    state?.nodes.delete(node);
+    if (state && !state.nodes.size) {
+        if (state.timer != null) clearTimeout(state.timer);
+        graph.events?.removeEventListener?.("node:slot-links:changed", state.listener);
+        widgetGraphs.delete(graph);
+    }
+    delete node.__jlcWidgetGraph;
+}
+
+
+// ComfyUI's modern renderer and drag controller read slot.pos directly rather
+// than the legacy getConnectionPos override. Set EVERY slot, including plain
+// inputs, widget-backed inputs, outputs and the spare, to the same row grid.
+function syncLaneLayout(node, measure = false) {
+    const width = Number(node.size?.[0]) || DEFAULT_NODE_WIDTH;
+    for (const [slots, concreteSlots, isInput] of [
+        [node.inputs, node._concreteInputs, true],
+        [node.outputs, node._concreteOutputs, false],
+    ]) {
+        for (let index = 0; index < (slots?.length ?? 0); index += 1) {
+            const slot = slots[index];
+            if (!slot) continue;
+            const x = isInput ? 0 : width;
+            const y = rowCenterY(index);
+            slot.pos = [x, y];
+            const concrete = concreteSlots?.[index];
+            if (concrete && concrete !== slot) concrete.pos = [x, y];
+        }
+    }
+    if (!measure || typeof node._measureSlot !== "function") return;
+    // Measure AFTER applying positions. Moving only slot.pos leaves the
+    // painted socket / drag hit-box cached at the old widget-layout location.
+    for (const [slots, concreteSlots, isInput] of [
+        [node.inputs, node._concreteInputs, true],
+        [node.outputs, node._concreteOutputs, false],
+    ]) {
+        for (let index = 0; index < (slots?.length ?? 0); index += 1) {
+            const slot = slots[index];
+            const concrete = concreteSlots?.[index];
+            if (slot?.boundingRect) node._measureSlot(slot, index, isInput);
+            if (concrete?.boundingRect && concrete !== slot) {
+                node._measureSlot(concrete, index, isInput);
+            }
+        }
+    }
+}
+
+
 function rowPitch() {
     return ROW_HEIGHT + ROW_GAP;
 }
@@ -310,6 +675,7 @@ function ensureSlots(node) {
             "*";
         setRowSocketType(node, index, observedType);
     });
+    syncLaneLayout(node, true);
 }
 
 function applyNodeSize(node, requestedSize = node.size, fitHeight = true) {
@@ -324,6 +690,7 @@ function applyNodeSize(node, requestedSize = node.size, fitHeight = true) {
     node.size[0] = width;
     node.size[1] = fitHeight ? height : Math.max(height, Number(requestedSize?.[1]) || height);
     node.min_size = [MIN_NODE_WIDTH, height];
+    syncLaneLayout(node, true);
     node.setDirtyCanvas?.(true, true);
 
     return node.size;
@@ -589,6 +956,9 @@ function maintainRows(node) {
     }
 
     refreshAllTypes(node);
+    trackWidgetGraph(node);
+    refreshLaneWidgets(node);
+    scheduleGraphWidgets(node.graph);
     refreshRerouteValidationError(node);
 
     if (structureChanged) {
@@ -726,6 +1096,11 @@ function installNode(node) {
 
     const original = {
         onAdded: node.onAdded?.bind(node),
+        onRemoved: node.onRemoved?.bind(node),
+        onGraphConfigured: node.onGraphConfigured?.bind(node),
+        getWidgetFromSlot: node.getWidgetFromSlot?.bind(node),
+        getLayoutWidgets: node.getLayoutWidgets?.bind(node),
+        arrangeWidgetInputSlots: node._arrangeWidgetInputSlots?.bind(node),
         onConfigure: node.onConfigure?.bind(node),
         onSerialize: node.onSerialize?.bind(node),
         onConnectionsChange: node.onConnectionsChange?.bind(node),
@@ -733,6 +1108,40 @@ function installNode(node) {
         computeSize: node.computeSize?.bind(node),
         getConnectionPos: node.getConnectionPos?.bind(node),
         onDrawForeground: node.onDrawForeground?.bind(node),
+    };
+
+    node.getWidgetFromSlot = function (input) {
+        // SubgraphInput.connect asks before the new link has been installed.
+        refreshLaneWidgets(this);
+        return this.widgets?.find((widget) => widget.name === input?.widget?.name) ??
+            original.getWidgetFromSlot?.(input);
+    };
+
+    node.getLayoutWidgets = function () {
+        return (original.getLayoutWidgets?.() ?? this.widgets ?? [])
+            .filter((widget) => !widget[proxyWidgetFlag]);
+    };
+
+    if (original.arrangeWidgetInputSlots) node._arrangeWidgetInputSlots = function () {
+        // These widgets expose metadata; they do not own the socket layout.
+        syncLaneLayout(this, true);
+    };
+
+    node.onRemoved = function () {
+        untrackWidgetGraph(this);
+        clearLaneWidgets(this);
+        if (this.__jlcMaintainTimer != null) clearTimeout(this.__jlcMaintainTimer);
+        return original.onRemoved?.(...arguments);
+    };
+
+    node.onGraphConfigured = function () {
+        // Core widgetInputs may remove an input whose named widget is missing.
+        // Strip derived descriptors before its load hook, then rebuild after
+        // every node and link in the workflow has been restored.
+        clearLaneWidgets(this);
+        const result = original.onGraphConfigured?.(...arguments);
+        maintainRows(this);
+        return result;
     };
 
     node.computeSize = function () {
@@ -791,6 +1200,7 @@ function installNode(node) {
     };
 
     node.onConfigure = function () {
+        clearLaneWidgets(this);
         const result = original.onConfigure?.(...arguments);
 
         this.__jlcStructuralUpdate = true;
@@ -813,6 +1223,15 @@ function installNode(node) {
     node.onSerialize = function (serialized) {
         const result = original.onSerialize?.(serialized);
 
+        // Do not persist runtime descriptors, proxies or inherited symbols.
+        // Clone serialized slots: some LiteGraph versions share live objects.
+        if (serialized.inputs) serialized.inputs = serialized.inputs.map((input) => {
+            const copy = { ...input };
+            if (copy.widget?.name?.startsWith("jlc_lane_")) delete copy.widget;
+            return copy;
+        });
+        delete serialized.widgets_values;
+        delete serialized.widgets_values_named;
         serialized.properties ??= {};
         serialized.properties[FORMAT_KEY] = FORMAT_VERSION;
         serialized.properties[ROWS_KEY] = normalizeRows(this).map((row) => ({
@@ -849,6 +1268,7 @@ function installNode(node) {
         }
 
         scheduleMaintainRows(this);
+        scheduleGraphWidgets(this.graph);
         return result;
     };
 
