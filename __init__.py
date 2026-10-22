@@ -71,6 +71,7 @@ from .nodes.util_nodes.jlc_dynamic_multi_set_get import (
      JLC_DynamicMultiSet,
  )
 from .nodes.util_nodes.jlc_dynamic_multi_reroute import JLC_DynamicMultiReroute
+from .nodes.util_nodes.jlc_text_concatenate import JLC_TextConcatenate
 
 
 NODE_CLASS_MAPPINGS = {
@@ -108,6 +109,7 @@ NODE_CLASS_MAPPINGS = {
     "JLC_DynamicMultiSet": JLC_DynamicMultiSet,
     "JLC_DynamicMultiGet": JLC_DynamicMultiGet,
     "JLC_DynamicMultiReroute": JLC_DynamicMultiReroute,
+    "JLC_TextConcatenate": JLC_TextConcatenate,
 }
 
 
@@ -144,6 +146,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "JLC_DynamicMultiSet": "\u2003JLC Multi Set",
     "JLC_DynamicMultiGet": "\u2003JLC Multi Get",
     "JLC_DynamicMultiReroute": "\u2003JLC Multi Reroute",
+    "JLC_TextConcatenate": "\u2003JLC Text Concatenate",
 }
 
 
